@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Activity, ArrowDownToLine, ArrowRight, CalendarDays, Check, ChevronDown, Clock3, FileSpreadsheet, LockKeyhole, Mic, MicOff, Pause, Pencil, Play, Plus, RotateCcw, Settings2, ShieldCheck, Sparkles, Trash2, X } from "lucide-react";
 import { durationLabel, localDateKey, minutesBetween, shiftsCsv, thisWeekStart, type ActiveShift, type Shift } from "@/lib/time";
 import { createGoogleSheet } from "@/lib/sheets";
+import { interpretVoice } from "@/lib/voice";
 
 const STORAGE_KEY = "routehours:v1";
 type RecognitionResult = { results: ArrayLike<ArrayLike<{ transcript: string }>> };
@@ -158,11 +159,10 @@ export default function Home() {
     instance.onresult = event => {
       const transcript = event.results[0]?.[0]?.transcript?.trim() || "";
       setVoiceText(transcript);
-      const phrase = transcript.toLowerCase();
-      if (/^(please )?(start|begin)( my| the)? shift\b/.test(phrase)) setVoiceAction({ kind: "start", transcript });
-      else if (/^(please )?(stop|end|finish)( my| the)? shift\b/.test(phrase)) setVoiceAction({ kind: "stop", transcript });
-      else if (/\b(\d+(?:\.\d+)?)\s*(hours?|hrs?)\b/.test(phrase) && /\b(log|add|worked|did)\b/.test(phrase)) {
-        const hours = Number(phrase.match(/\b(\d+(?:\.\d+)?)\s*(?:hours?|hrs?)\b/)?.[1] || 0);
+      const intent = interpretVoice(transcript);
+      if (intent.kind === "start" || intent.kind === "stop") setVoiceAction({ kind: intent.kind, transcript });
+      else if (intent.kind === "logHours") {
+        const hours = intent.hours;
         if (hours > 0 && hours <= 24) {
           const end = new Date();
           const start = new Date(end.getTime() - hours * 3600000);
@@ -170,9 +170,8 @@ export default function Home() {
           openEdit(draft);
           setModalError("Review the suggested times before saving. The app only heard a duration, so it assumed the shift ended now.");
         } else setNotice("Say a duration between 0 and 24 hours.");
-      } else if (active) {
-        const note = transcript.replace(/^(add|take|write)( a)? note[:,]?\s*/i, "").trim();
-        setNoteInput(note);
+      } else if (intent.kind === "note" && active) {
+        setNoteInput(intent.text);
         setNotice("Voice note captured. Review it, then tap Add note or Stop & save shift.");
       } else setNotice("Start a shift first to dictate a note, or say ‘log 2 hours’ for a manual entry.");
     };
