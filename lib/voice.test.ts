@@ -14,3 +14,8 @@ test("a spoken duration becomes a draft, not a saved shift", () => {
 test("notes do not accidentally become duration commands", () => {
   assert.deepEqual(interpretVoice("add note: worked with the group for 2 hours"), { kind: "note", text: "worked with the group for 2 hours" });
 });
+
+test("a spoken app question goes to help instead of shift notes", () => {
+  assert.deepEqual(interpretVoice("How do I export my hours?"), { kind: "help", question: "How do I export my hours?" });
+  assert.deepEqual(interpretVoice("How should I structure this"), { kind: "help", question: "How should I structure this" });
+});

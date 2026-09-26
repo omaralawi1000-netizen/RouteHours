@@ -11,7 +11,7 @@ async function googleRequest(url: string, accessToken: string, method: string, b
   return data;
 }
 
-export async function createGoogleSheet(accessToken: string, shifts: Shift[]): Promise<{ url: string; complete: boolean }> {
+export async function createGoogleSheet(accessToken: string, shifts: Shift[]): Promise<{ id: string; url: string; complete: boolean }> {
   const sorted = shifts.slice().sort((a, b) => a.start.localeCompare(b.start));
   const title = `RouteHours — ${new Date().toLocaleDateString("en-GB")}`;
   const sheet = await googleRequest("https://sheets.googleapis.com/v4/spreadsheets", accessToken, "POST", {
@@ -31,7 +31,7 @@ export async function createGoogleSheet(accessToken: string, shifts: Shift[]): P
     ["TOTAL", "", "", totalMinutes, Number((totalMinutes / 60).toFixed(4))],
   ];
   try { await googleRequest(`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(id)}/values/Hours!A1?valueInputOption=RAW`, accessToken, "PUT", { majorDimension: "ROWS", values: rows }); }
-  catch { return { url, complete: false }; }
+  catch { return { id, url, complete: false }; }
   try { await googleRequest(`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(id)}:batchUpdate`, accessToken, "POST", {
     requests: [
       { repeatCell: { range: { sheetId: tabId, startRowIndex: 0, endRowIndex: 1 }, cell: { userEnteredFormat: { backgroundColor: { red: .1, green: .25, blue: .2 }, textFormat: { bold: true, foregroundColor: { red: 1, green: 1, blue: 1 } } } }, fields: "userEnteredFormat" } },
@@ -39,5 +39,15 @@ export async function createGoogleSheet(accessToken: string, shifts: Shift[]): P
       { autoResizeDimensions: { dimensions: { sheetId: tabId, dimension: "COLUMNS", startIndex: 0, endIndex: 5 } } },
     ],
   }); } catch { /* The hours are already in the sheet; formatting is optional. */ }
-  return { url, complete: true };
+  return { id, url, complete: true };
+}
+
+export async function shareGoogleSheet(accessToken: string, id: string, email: string, role: "reader" | "writer") {
+  const response = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}/permissions?sendNotificationEmail=true`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
+    body: JSON.stringify({ type: "user", role, emailAddress: email.trim() }),
+  });
+  const data = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(data?.error?.message || `Google Drive could not share the Sheet (${response.status}). Check that the Drive API is enabled.`);
 }
