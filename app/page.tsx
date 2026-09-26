@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Activity, ArrowDownToLine, ArrowRight, CalendarDays, Check, ChevronDown, Clock3, FileSpreadsheet, LockKeyhole, Mic, MicOff, Pause, Pencil, Play, Plus, RotateCcw, Settings2, ShieldCheck, Sparkles, Trash2, X } from "lucide-react";
+import { Activity, ArrowDownToLine, ArrowRight, CalendarDays, Check, ChevronDown, Clock3, Download, FileSpreadsheet, LockKeyhole, Mic, MicOff, Pause, Pencil, Play, Plus, RotateCcw, Settings2, ShieldCheck, Sparkles, Trash2, X } from "lucide-react";
 import { durationLabel, localDateKey, minutesBetween, shiftsCsv, thisWeekStart, type ActiveShift, type Shift } from "@/lib/time";
 import { createGoogleSheet } from "@/lib/sheets";
 import { interpretVoice } from "@/lib/voice";
@@ -12,6 +12,7 @@ type Recognition = { lang: string; continuous: boolean; interimResults: boolean;
 type VoiceAction = { kind: "start" | "stop"; transcript: string };
 type GoogleTokenClient = { requestAccessToken: () => void };
 type GoogleWindow = Window & { google?: { accounts: { oauth2: { initTokenClient: (config: { client_id: string; scope: string; callback: (response: { access_token?: string; error?: string }) => void }) => GoogleTokenClient } } } };
+type InstallPrompt = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> };
 type StoredData = { shifts: Shift[]; active: ActiveShift | null; aiEnabled: boolean; accessCode: string };
 
 function readStored(): StoredData {
@@ -71,6 +72,9 @@ export default function Home() {
   const [notice, setNotice] = useState("");
   const [sheetUrl, setSheetUrl] = useState("");
   const [creatingSheet, setCreatingSheet] = useState(false);
+  const [installOpen, setInstallOpen] = useState(false);
+  const [installed, setInstalled] = useState(false);
+  const installPrompt = useRef<InstallPrompt | null>(null);
   const importing = useRef<HTMLInputElement>(null);
   const processing = useRef(new Set<string>());
   const recognition = useRef<Recognition | null>(null);
@@ -84,8 +88,17 @@ export default function Home() {
     setShifts(saved.shifts); setActive(saved.active); setAiEnabled(saved.aiEnabled); setAccessCode(saved.accessCode); setLoaded(true);
     const speechWindow = window as Window & { SpeechRecognition?: new () => Recognition; webkitSpeechRecognition?: new () => Recognition };
     setVoiceSupported(Boolean(speechWindow.SpeechRecognition || speechWindow.webkitSpeechRecognition));
+    setInstalled(window.matchMedia("(display-mode: standalone)").matches || Boolean((navigator as Navigator & { standalone?: boolean }).standalone));
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const onPrompt = (event: Event) => { event.preventDefault(); installPrompt.current = event as InstallPrompt; };
+    const onInstalled = () => { setInstalled(true); setInstallOpen(false); installPrompt.current = null; };
+    window.addEventListener("beforeinstallprompt", onPrompt);
+    window.addEventListener("appinstalled", onInstalled);
+    return () => { window.removeEventListener("beforeinstallprompt", onPrompt); window.removeEventListener("appinstalled", onInstalled); };
   }, []);
 
   useEffect(() => {
@@ -230,6 +243,14 @@ export default function Home() {
     });
     client.requestAccessToken();
   }
+  async function openInstall() {
+    const prompt = installPrompt.current;
+    if (!prompt) { setInstallOpen(true); return; }
+    await prompt.prompt();
+    const choice = await prompt.userChoice;
+    if (choice.outcome === "accepted") setInstalled(true);
+    installPrompt.current = null;
+  }
   async function importBackup(file: File | undefined) {
     if (!file) return;
     try {
@@ -248,7 +269,7 @@ export default function Home() {
     <div className="ambient ambient-one"/><div className="ambient ambient-two"/>
     <header className="topbar container">
       <div className="brand"><div className="brand-mark"><Activity size={22} strokeWidth={2.6}/></div><div><strong>RouteHours</strong><span>Bus shift tracker</span></div></div>
-      <div className="top-actions"><span className="today-pill"><CalendarDays size={15}/>{new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short" }).format(new Date(now))}</span><button className="icon-btn" aria-label="Settings" onClick={() => setSettingsOpen(true)}><Settings2 size={19}/></button></div>
+      <div className="top-actions"><span className="today-pill"><CalendarDays size={15}/>{new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short" }).format(new Date(now))}</span>{!installed && <button className="install-top" onClick={() => void openInstall()}><Download size={16}/> Install</button>}<button className="icon-btn" aria-label="Settings" onClick={() => setSettingsOpen(true)}><Settings2 size={19}/></button></div>
     </header>
 
     <main className="container main-grid">
@@ -285,5 +306,6 @@ export default function Home() {
     {editing && <div className="modal-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) setEditing(null); }}><div className="modal" role="dialog" aria-modal="true" aria-label="Edit shift"><div className="modal-head"><div><span className="small-kicker">SHIFT DETAILS</span><h2>{shifts.some(s => s.id === editing.id) ? "Edit shift" : "Add a shift"}</h2></div><button className="icon-btn" aria-label="Close" onClick={() => setEditing(null)}><X size={19}/></button></div><label>Start date & time<input type="datetime-local" value={editStart} onChange={e => setEditStart(e.target.value)}/></label><label>End date & time<input type="datetime-local" value={editEnd} onChange={e => setEditEnd(e.target.value)}/></label><label>Notes <small>One note per line. Avoid identifying children.</small><textarea value={editNotes} onChange={e => setEditNotes(e.target.value)} rows={5}/></label>{modalError && <p className="form-error">{modalError}</p>}<button className="modal-submit" onClick={saveEdit}>Save shift <ArrowRight size={17}/></button></div></div>}
 
     {settingsOpen && <div className="modal-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) setSettingsOpen(false); }}><div className="modal settings-modal" role="dialog" aria-modal="true" aria-label="Settings"><div className="modal-head"><div><span className="small-kicker">PREFERENCES</span><h2>Settings</h2></div><button className="icon-btn" aria-label="Close" onClick={() => setSettingsOpen(false)}><X size={19}/></button></div><div className="setting-block"><div className="setting-title"><span className="setting-icon"><Sparkles size={19}/></span><div><strong>Automatic AI summaries</strong><p>Create a sectioned summary after each shift.</p></div><button className={`toggle ${aiEnabled ? "on" : ""}`} role="switch" aria-checked={aiEnabled} aria-label="Automatic AI summaries" onClick={() => setAiEnabled(!aiEnabled)}><span/></button></div><label className="access-label">App access code<input type="password" value={accessCode} onChange={e => setAccessCode(e.target.value)} placeholder="Enter the code set on your server" autoComplete="off"/></label><p className="privacy-note"><LockKeyhole size={16}/>When enabled, shift times and notes are sent to Gemini through your server. Use only de-identified notes and follow your employer’s rules for work information.</p></div><div className="setting-block"><div className="setting-title"><span className="setting-icon"><RotateCcw size={19}/></span><div><strong>Restore a backup</strong><p>Replace this browser’s history from a RouteHours JSON file.</p></div></div><input ref={importing} type="file" accept="application/json,.json" className="sr-only" onChange={e => void importBackup(e.target.files?.[0])}/><button className="secondary-btn restore-btn" onClick={() => importing.current?.click()}>Choose backup file <ArrowRight size={16}/></button></div></div></div>}
+    {installOpen && <div className="modal-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) setInstallOpen(false); }}><div className="modal install-modal" role="dialog" aria-modal="true" aria-label="Install RouteHours"><div className="modal-head"><div><span className="small-kicker">ON YOUR PHONE</span><h2>Install RouteHours</h2></div><button className="icon-btn" aria-label="Close" onClick={() => setInstallOpen(false)}><X size={19}/></button></div><p>Open your deployed RouteHours website in your phone browser, then add it to your Home Screen:</p><div className="install-steps"><strong>iPhone · Safari</strong><ol><li>Tap Share.</li><li>Tap <b>Add to Home Screen</b>.</li><li>Turn on <b>Open as Web App</b>, then tap Add.</li></ol></div><div className="install-steps"><strong>Android · Chrome</strong><ol><li>Tap the three-dot menu.</li><li>Tap <b>Install app</b> or <b>Install and create shortcut</b>.</li><li>Confirm Install.</li></ol></div><p className="install-fine">Use the new Home Screen icon for your shifts. Your records stay in that browser installation, so export a backup regularly.</p></div></div>}
   </div>;
 }

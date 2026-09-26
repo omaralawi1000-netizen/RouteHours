@@ -46,6 +46,15 @@ Google may require additional OAuth verification for use beyond your own test ac
 
 Deploy this Next.js app to a host that runs server routes (for example, Vercel). Add the same environment variables in the host's settings, and register the deployed URL as an OAuth authorized JavaScript origin. Keep `GEMINI_API_KEY` and `APP_ACCESS_TOKEN` secret. AI requests are rejected unless both server values are set and the access code matches.
 
+## Install on your phone
+
+RouteHours is a Progressive Web App. It needs a deployed **HTTPS** website before you can install it from your phone browser. The GitHub code page is not the app URL.
+
+- **Android:** Open the deployed RouteHours URL in Chrome. Tap the three-dot menu, then **Install app** or **Install and create shortcut**, then confirm. You can also use the app's **Install** button when Chrome offers a prompt.
+- **iPhone:** Open the deployed RouteHours URL in Safari. Tap **Share → Add to Home Screen**, turn on **Open as Web App**, and tap **Add**.
+
+Launch the installed icon once while online so its app shell can be saved for later offline use. The timer, typed notes, and CSV/backup exports use local browser data; AI summaries, Google sign-in, and direct Google Sheet creation require internet access. Keep using the installed icon for your shifts and export backups regularly. Data is not synced between phones, browsers, or the original Safari/Chrome tab.
+
 ## Data and limits
 
 - Browser data can disappear if site storage is cleared or you switch device/browser. Use **Export → Backup data** regularly.
