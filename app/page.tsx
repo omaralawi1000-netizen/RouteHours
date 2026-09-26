@@ -13,7 +13,8 @@ type VoiceAction = { kind: "start" | "stop"; transcript: string };
 type GoogleTokenClient = { requestAccessToken: () => void };
 type GoogleWindow = Window & { google?: { accounts: { oauth2: { initTokenClient: (config: { client_id: string; scope: string; callback: (response: { access_token?: string; error?: string }) => void; error_callback?: (error: { type?: string }) => void }) => GoogleTokenClient } } } };
 type InstallPrompt = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> };
-type StoredData = { shifts: Shift[]; active: ActiveShift | null; aiEnabled: boolean; accessCode: string; geminiApiKey: string; googleClientId: string };
+type DictationLanguage = "auto" | "en" | "da" | "ar";
+type StoredData = { shifts: Shift[]; active: ActiveShift | null; noteDraft: string; aiEnabled: boolean; accessCode: string; geminiApiKey: string; groqApiKey: string; dictationLanguage: DictationLanguage; googleClientId: string };
 
 function readStored(): StoredData {
   try {
@@ -21,12 +22,15 @@ function readStored(): StoredData {
     return {
       shifts: Array.isArray(value?.shifts) ? value.shifts.filter((s: Shift) => s && s.id && s.start && s.end) : [],
       active: value?.active?.start ? value.active : null,
+      noteDraft: value?.active?.start && typeof value?.noteDraft === "string" ? value.noteDraft.slice(0, 2000) : "",
       aiEnabled: value?.aiEnabled === true,
       accessCode: typeof value?.accessCode === "string" && !value.accessCode.startsWith("AIza") ? value.accessCode : "",
       geminiApiKey: typeof value?.geminiApiKey === "string" ? value.geminiApiKey : typeof value?.accessCode === "string" && value.accessCode.startsWith("AIza") ? value.accessCode : "",
+      groqApiKey: typeof value?.groqApiKey === "string" ? value.groqApiKey : "",
+      dictationLanguage: value?.dictationLanguage === "en" || value?.dictationLanguage === "da" || value?.dictationLanguage === "ar" ? value.dictationLanguage : "auto",
       googleClientId: typeof value?.googleClientId === "string" ? value.googleClientId : "",
     };
-  } catch { return { shifts: [], active: null, aiEnabled: false, accessCode: "", geminiApiKey: "", googleClientId: "" }; }
+  } catch { return { shifts: [], active: null, noteDraft: "", aiEnabled: false, accessCode: "", geminiApiKey: "", groqApiKey: "", dictationLanguage: "auto", googleClientId: "" }; }
 }
 
 function formatTime(value: string) { return new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit" }).format(new Date(value)); }
@@ -62,6 +66,10 @@ export default function Home() {
   const [aiEnabled, setAiEnabled] = useState(false);
   const [accessCode, setAccessCode] = useState("");
   const [geminiApiKey, setGeminiApiKey] = useState("");
+  const [groqApiKey, setGroqApiKey] = useState("");
+  const [dictationLanguage, setDictationLanguage] = useState<DictationLanguage>("auto");
+  const [checkingGroq, setCheckingGroq] = useState(false);
+  const [groqConnection, setGroqConnection] = useState<{ ok: boolean; message: string } | null>(null);
   const [googleClientId, setGoogleClientId] = useState("");
   const [checkingAi, setCheckingAi] = useState(false);
   const [aiConnection, setAiConnection] = useState<{ ok: boolean; message: string } | null>(null);
@@ -73,6 +81,8 @@ export default function Home() {
   const [editNotes, setEditNotes] = useState("");
   const [modalError, setModalError] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSaved, setSettingsSaved] = useState(false);
+  const [settingsSaveError, setSettingsSaveError] = useState("");
   const [exportOpen, setExportOpen] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
@@ -84,19 +94,41 @@ export default function Home() {
   const importing = useRef<HTMLInputElement>(null);
   const processing = useRef(new Set<string>());
   const recognition = useRef<Recognition | null>(null);
+  const activeRef = useRef<ActiveShift | null>(null);
+  const recorder = useRef<MediaRecorder | null>(null);
+  const recorderStream = useRef<MediaStream | null>(null);
+  const recordingClock = useRef<number | null>(null);
+  const recordingLimit = useRef<number | null>(null);
+  const recordingStarted = useRef(0);
+  const recordingCancelled = useRef(false);
+  const recordedChunks = useRef<Blob[]>([]);
   const [voiceSupported, setVoiceSupported] = useState(false);
   const [listening, setListening] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [micStarting, setMicStarting] = useState(false);
+  const micStartingRef = useRef(false);
+  const [transcribing, setTranscribing] = useState(false);
+  const [recordSeconds, setRecordSeconds] = useState(0);
   const [voiceAction, setVoiceAction] = useState<VoiceAction | null>(null);
   const [voiceText, setVoiceText] = useState("");
 
+  useEffect(() => { activeRef.current = active; }, [active]);
+
   useEffect(() => {
     const saved = readStored();
-    setShifts(saved.shifts); setActive(saved.active); setAiEnabled(saved.aiEnabled); setAccessCode(saved.accessCode); setGeminiApiKey(saved.geminiApiKey); setGoogleClientId(saved.googleClientId); setLoaded(true);
+    setShifts(saved.shifts); setActive(saved.active); setNoteInput(saved.noteDraft); setAiEnabled(saved.aiEnabled); setAccessCode(saved.accessCode); setGeminiApiKey(saved.geminiApiKey); setGroqApiKey(saved.groqApiKey); setDictationLanguage(saved.dictationLanguage); setGoogleClientId(saved.googleClientId); setLoaded(true);
     const speechWindow = window as Window & { SpeechRecognition?: new () => Recognition; webkitSpeechRecognition?: new () => Recognition };
     setVoiceSupported(Boolean(speechWindow.SpeechRecognition || speechWindow.webkitSpeechRecognition));
     setInstalled(window.matchMedia("(display-mode: standalone)").matches || Boolean((navigator as Navigator & { standalone?: boolean }).standalone));
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearInterval(timer);
+      recordingCancelled.current = true;
+      if (recorder.current?.state === "recording") recorder.current.stop();
+      recorderStream.current?.getTracks().forEach(track => track.stop());
+      if (recordingClock.current) window.clearInterval(recordingClock.current);
+      if (recordingLimit.current) window.clearTimeout(recordingLimit.current);
+    };
   }, []);
 
   useEffect(() => {
@@ -109,9 +141,9 @@ export default function Home() {
 
   useEffect(() => {
     if (!loaded) return;
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ shifts, active, aiEnabled, accessCode, geminiApiKey, googleClientId })); }
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ shifts, active, noteDraft: noteInput, aiEnabled, accessCode, geminiApiKey, groqApiKey, dictationLanguage, googleClientId })); }
     catch { setNotice("Browser storage is unavailable. Export your hours before closing this page."); }
-  }, [loaded, shifts, active, aiEnabled, accessCode, geminiApiKey, googleClientId]);
+  }, [loaded, shifts, active, noteInput, aiEnabled, accessCode, geminiApiKey, groqApiKey, dictationLanguage, googleClientId]);
 
   useEffect(() => {
     if (!loaded || !aiEnabled || !(geminiApiKey || accessCode)) return;
@@ -170,32 +202,36 @@ export default function Home() {
     setActive({ ...active, notes: [...active.notes, note] });
     setNoteInput("");
   }
+  function handleVoiceTranscript(transcript: string) {
+    const heard = transcript.trim();
+    if (!heard) { setNotice("No speech was heard. Tap the microphone and try again."); return; }
+    setVoiceText(heard);
+    const intent = interpretVoice(heard);
+    if (intent.kind === "start" || intent.kind === "stop") setVoiceAction({ kind: intent.kind, transcript: heard });
+    else if (intent.kind === "logHours") {
+      const hours = intent.hours;
+      if (hours > 0 && hours <= 24) {
+        const end = new Date();
+        const start = new Date(end.getTime() - hours * 3600000);
+        const draft: Shift = { id: crypto.randomUUID(), start: start.toISOString(), end: end.toISOString(), notes: [] };
+        openEdit(draft);
+        setModalError("Review the suggested times before saving. The app only heard a duration, so it assumed the shift ended now.");
+      } else setNotice("Say a duration between 0 and 24 hours.");
+    } else if (intent.kind === "note" && activeRef.current) {
+      const note = intent.text;
+      setNoteInput(current => current.trim() ? `${current.trim()} ${note}` : note);
+      setNotice("Dictation added to your note draft. Review it, then tap Add note or stop the shift.");
+    } else setNotice("Start a shift first to dictate a note, or say ‘log 2 hours’ for a manual entry.");
+  }
   function startListening() {
     const speechWindow = window as Window & { SpeechRecognition?: new () => Recognition; webkitSpeechRecognition?: new () => Recognition };
     const Speech = speechWindow.SpeechRecognition || speechWindow.webkitSpeechRecognition;
     if (!Speech) { setNotice("Voice input is unavailable in this browser. You can still type notes and use the timer."); return; }
     setVoiceAction(null); setVoiceText("");
     const instance = new Speech();
-    instance.lang = "en-US"; instance.continuous = false; instance.interimResults = false;
-    instance.onresult = event => {
-      const transcript = event.results[0]?.[0]?.transcript?.trim() || "";
-      setVoiceText(transcript);
-      const intent = interpretVoice(transcript);
-      if (intent.kind === "start" || intent.kind === "stop") setVoiceAction({ kind: intent.kind, transcript });
-      else if (intent.kind === "logHours") {
-        const hours = intent.hours;
-        if (hours > 0 && hours <= 24) {
-          const end = new Date();
-          const start = new Date(end.getTime() - hours * 3600000);
-          const draft: Shift = { id: crypto.randomUUID(), start: start.toISOString(), end: end.toISOString(), notes: [] };
-          openEdit(draft);
-          setModalError("Review the suggested times before saving. The app only heard a duration, so it assumed the shift ended now.");
-        } else setNotice("Say a duration between 0 and 24 hours.");
-      } else if (intent.kind === "note" && active) {
-        setNoteInput(intent.text);
-        setNotice("Voice note captured. Review it, then tap Add note or Stop & save shift.");
-      } else setNotice("Start a shift first to dictate a note, or say ‘log 2 hours’ for a manual entry.");
-    };
+    instance.lang = dictationLanguage === "da" ? "da-DK" : dictationLanguage === "ar" ? "ar-SA" : "en-US";
+    instance.continuous = false; instance.interimResults = false;
+    instance.onresult = event => handleVoiceTranscript(event.results[0]?.[0]?.transcript || "");
     instance.onerror = event => {
       setListening(false);
       setNotice(event.error === "not-allowed" || event.error === "service-not-allowed"
@@ -207,6 +243,98 @@ export default function Home() {
     instance.onend = () => setListening(false);
     recognition.current = instance;
     try { instance.start(); setListening(true); } catch { setListening(false); setNotice("Microphone could not start."); }
+  }
+  function releaseRecording() {
+    if (recordingClock.current !== null) window.clearInterval(recordingClock.current);
+    if (recordingLimit.current !== null) window.clearTimeout(recordingLimit.current);
+    recordingClock.current = null; recordingLimit.current = null;
+    recorderStream.current?.getTracks().forEach(track => track.stop());
+    recorderStream.current = null; recorder.current = null;
+    setRecording(false);
+  }
+  async function transcribeRecording(blob: Blob, mimeType: string, key: string, language: DictationLanguage) {
+    if (!blob.size || blob.size > 3_000_000) {
+      setTranscribing(false);
+      setNotice(blob.size ? "Recording is too large. Try a shorter note." : "No audio was recorded. Try again.");
+      return;
+    }
+    const type = mimeType.split(";")[0];
+    const extension = type.includes("mp4") ? "m4a" : type.includes("ogg") ? "ogg" : type.includes("wav") ? "wav" : "webm";
+    const form = new FormData();
+    form.append("audio", new File([blob], `routehours-dictation.${extension}`, { type }));
+    if (language !== "auto") form.append("language", language);
+    try {
+      const response = await fetch("/api/transcribe", { method: "POST", headers: { "x-groq-api-key": key }, body: form });
+      const result = await response.json().catch(() => null);
+      if (!response.ok || typeof result?.text !== "string") throw new Error(result?.error || "Groq did not return text. Try again.");
+      handleVoiceTranscript(result.text);
+    } catch (error) {
+      setNotice(error instanceof TypeError ? "Could not reach Groq. Check your connection and try again." : error instanceof Error ? error.message : "Could not transcribe. Try again online.");
+    } finally { setTranscribing(false); }
+  }
+  function stopGroqRecording() {
+    const instance = recorder.current;
+    if (!instance || instance.state !== "recording") return;
+    setRecording(false); setTranscribing(true);
+    try { instance.stop(); }
+    catch { releaseRecording(); setTranscribing(false); setNotice("Recording could not stop. Try again."); }
+  }
+  async function startGroqRecording() {
+    if (micStartingRef.current || recording || transcribing) return;
+    if (!navigator.onLine) { setNotice("Groq dictation needs an internet connection. You can still type a note."); return; }
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      setNotice("Audio recording is unavailable in this browser. Trying browser voice input instead.");
+      startListening();
+      return;
+    }
+    micStartingRef.current = true; setMicStarting(true);
+    recordingCancelled.current = false;
+    let stream: MediaStream | null = null;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+      if (recordingCancelled.current) { stream.getTracks().forEach(track => track.stop()); return; }
+      const mimeType = ["audio/webm;codecs=opus", "audio/mp4", "audio/ogg;codecs=opus"].find(type => typeof MediaRecorder.isTypeSupported === "function" && MediaRecorder.isTypeSupported(type));
+      const instance = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      const key = groqApiKey.trim();
+      const language = dictationLanguage;
+      recorder.current = instance; recorderStream.current = stream; recordedChunks.current = []; recordingCancelled.current = false;
+      instance.ondataavailable = event => { if (event.data.size) recordedChunks.current.push(event.data); };
+      instance.onerror = () => {
+        recordingCancelled.current = true;
+        setNotice("Recording failed. Check microphone access and try again.");
+        if (instance.state === "recording") stopGroqRecording();
+        else { releaseRecording(); setTranscribing(false); }
+      };
+      instance.onstop = () => {
+        const type = instance.mimeType || mimeType || "audio/webm";
+        const audio = new Blob(recordedChunks.current, { type });
+        recordedChunks.current = [];
+        releaseRecording();
+        if (recordingCancelled.current) { setTranscribing(false); return; }
+        void transcribeRecording(audio, type, key, language);
+      };
+      setVoiceAction(null); setVoiceText(""); setRecordSeconds(0);
+      instance.start(); setRecording(true);
+      recordingStarted.current = Date.now();
+      recordingClock.current = window.setInterval(() => setRecordSeconds(Math.floor((Date.now() - recordingStarted.current) / 1000)), 500);
+      recordingLimit.current = window.setTimeout(() => { setNotice("One minute recorded. Sending it to Groq now."); stopGroqRecording(); }, 60_000);
+    } catch {
+      stream?.getTracks().forEach(track => track.stop());
+      releaseRecording();
+      setNotice("Microphone could not start. Allow microphone access in your browser settings.");
+    } finally { micStartingRef.current = false; setMicStarting(false); }
+  }
+  async function testGroqConnection() {
+    if (!groqApiKey.trim()) { setGroqConnection({ ok: false, message: "Enter your Groq API key first." }); return; }
+    setCheckingGroq(true); setGroqConnection(null);
+    try {
+      const response = await fetch("/api/transcribe", { headers: { "x-groq-api-key": groqApiKey.trim() } });
+      const result = await response.json().catch(() => null);
+      if (!response.ok || !result?.ready) throw new Error(result?.error || "Groq is unavailable. Try again.");
+      setGroqConnection({ ok: true, message: "Groq is ready for dictation." });
+    } catch (error) {
+      setGroqConnection({ ok: false, message: error instanceof TypeError ? "Could not reach Groq. Check your connection." : error instanceof Error ? error.message : "Could not connect to Groq." });
+    } finally { setCheckingGroq(false); }
   }
   function confirmVoiceAction() {
     if (!voiceAction) return;
@@ -245,10 +373,21 @@ export default function Home() {
       const result = await response.json();
       if (!response.ok || !result.summary) throw new Error(result.error || "Gemini did not return a summary.");
       setAiEnabled(true);
+      setSettingsSaved(false);
       setAiConnection({ ok: true, message: "Gemini is connected. Automatic summaries are on." });
     } catch (error) {
       setAiConnection({ ok: false, message: error instanceof Error ? error.message : "Connection test failed. Try again online." });
     } finally { setCheckingAi(false); }
+  }
+  function saveSettings() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ shifts, active, noteDraft: noteInput, aiEnabled, accessCode, geminiApiKey, groqApiKey, dictationLanguage, googleClientId }));
+      setSettingsSaved(true);
+      setSettingsSaveError("");
+    } catch {
+      setSettingsSaved(false);
+      setSettingsSaveError("Could not save on this device. Check that browser storage is allowed.");
+    }
   }
   function deleteShift(id: string) {
     if (!window.confirm("Delete this shift? This cannot be undone unless you have a backup.")) return;
@@ -320,22 +459,23 @@ export default function Home() {
         <div className="timer-foot"><ShieldCheck size={15}/>Timer uses actual start and end times, even if you close the tab.</div>
       </section>
 
-      <section className={`voice-studio ${listening ? "is-listening" : ""}`} aria-label="Voice controls">
+      <section className={`voice-studio ${listening || recording ? "is-listening" : ""} ${transcribing ? "is-transcribing" : ""}`} aria-label="Voice controls">
         <div className="voice-studio-glow" aria-hidden="true"/>
         <div className="voice-studio-copy">
-          <span className="voice-eyebrow"><span className="voice-live-dot"/>{listening ? "LISTENING NOW" : "VOICE SHORTCUTS"}</span>
-          <h2>{listening ? "I'm listening." : "Say it as you go."}</h2>
-          <p>Start or stop your shift, add a note, or say “log 2 hours”.</p>
+          <span className="voice-eyebrow"><span className="voice-live-dot"/>{recording ? `RECORDING · ${Math.floor(recordSeconds / 60)}:${String(recordSeconds % 60).padStart(2, "0")}` : transcribing ? "GROQ IS TRANSCRIBING" : listening ? "LISTENING NOW" : groqApiKey ? "GROQ DICTATION" : "VOICE SHORTCUTS"}</span>
+          <h2>{recording || listening ? "I'm listening." : transcribing ? "Turning speech into text…" : "Say it as you go."}</h2>
+          <p>{groqApiKey ? "Tap the mic, speak a note or command, then tap again. Groq turns it into text for you to review." : "Start or stop your shift, add a note, or say “log 2 hours”."}</p>
           <div className="voice-suggestions"><span>“Start shift”</span><span>“Add note…”</span><span>“Stop shift”</span></div>
-          <small>Browser speech service may process your voice. Leave out identifying details.</small>
+          <small>{groqApiKey ? "Only record your own speech. Audio is sent to Groq when you finish; leave out children’s names and identifying details." : "Browser speech service may process your voice. Leave out identifying details."}</small>
           {voiceText && !voiceAction && <div className="voice-heard" role="status">Heard: “{voiceText}”</div>}
+          {voiceText && !voiceAction && active && <button className="voice-review" onClick={() => document.getElementById("quick-notes")?.scrollIntoView()}><span>Review note draft</span><ArrowRight size={14}/></button>}
         </div>
         <div className="voice-control">
           <div className="voice-orbit"><span/><span/><span/>
-            <button className="voice-orb-button" aria-label={listening ? "Stop listening" : "Start voice input"} aria-pressed={listening} onClick={listening ? () => { recognition.current?.stop(); setListening(false); } : startListening}>{listening ? <MicOff size={30} strokeWidth={2.1}/> : <Mic size={30} strokeWidth={2.1}/>}</button>
+            <button className="voice-orb-button" aria-label={recording || listening ? "Stop recording" : groqApiKey ? "Start Groq dictation" : "Start voice input"} aria-pressed={recording || listening} disabled={transcribing || micStarting} onClick={groqApiKey ? recording ? stopGroqRecording : () => void startGroqRecording() : listening ? () => { recognition.current?.stop(); setListening(false); } : startListening}>{recording || listening ? <MicOff size={30} strokeWidth={2.1}/> : <Mic size={30} strokeWidth={2.1}/>}</button>
           </div>
           <div className="voice-wave" aria-hidden="true">{Array.from({ length: 9 }, (_, i) => <span key={i}/>)}</div>
-          <strong>{listening ? "Tap to stop" : voiceSupported ? "Tap to speak" : "Try voice input"}</strong>
+          <strong>{recording || listening ? "Tap to finish" : transcribing ? "Please wait…" : micStarting ? "Opening mic…" : groqApiKey ? "Tap to record" : voiceSupported ? "Tap to speak" : "Try voice input"}</strong>
         </div>
       </section>
       {voiceAction && <div className="voice-confirm"><div><strong>Heard: “{voiceAction.transcript}”</strong><span>Confirm before the timer changes.</span></div><button onClick={confirmVoiceAction}>Confirm {voiceAction.kind}</button><button className="voice-cancel" onClick={() => setVoiceAction(null)} aria-label="Cancel voice command"><X size={17}/></button></div>}
@@ -346,7 +486,7 @@ export default function Home() {
         <div className="stat-card chart-card"><div className="chart-head"><span className="stat-label">YOUR WEEK AT A GLANCE</span><span>Mon–Sun</span></div><div className="bar-chart">{weekDays.map((day, i) => <div className="bar-col" key={i} title={`${day.minutes} minutes`}><div className="bar-track"><div className={`bar-fill ${day.today ? "today" : ""}`} style={{ height: `${Math.max(day.minutes ? 8 : 3, day.minutes / maxDaily * 100)}%` }}/></div><span>{day.label}</span></div>)}</div></div>
       </div>
 
-      {active && <section className="notes-card surface"><div className="section-heading"><div><span className="small-kicker">ON THE ROUTE</span><h2>Quick notes</h2></div><span className="live-badge"><span/> Live shift</span></div><p>Jot down practical details while they are fresh. Avoid children’s names, diagnoses, and identifying information.</p><div className="note-compose"><textarea value={noteInput} onChange={e => setNoteInput(e.target.value)} placeholder="Example: Route ran 10 minutes late; helped everyone get seated safely." maxLength={2000}/><button onClick={addNote} disabled={!noteInput.trim()}><Plus size={18}/> Add note</button></div>{active.notes.length > 0 && <div className="note-list">{active.notes.map((note, i) => <div className="note-item" key={i}><span>{String(i + 1).padStart(2, "0")}</span><p>{note}</p><button aria-label="Remove note" onClick={() => setActive({ ...active, notes: active.notes.filter((_, n) => n !== i) })}><X size={15}/></button></div>)}</div>}</section>}
+      {active && <section id="quick-notes" className="notes-card surface"><div className="section-heading"><div><span className="small-kicker">ON THE ROUTE</span><h2>Quick notes</h2></div><span className="live-badge"><span/> Live shift</span></div><p>Jot down practical details while they are fresh. Avoid children’s names, diagnoses, and identifying information.</p><div className="note-compose"><textarea value={noteInput} onChange={e => setNoteInput(e.target.value)} placeholder="Example: Route ran 10 minutes late; helped everyone get seated safely." maxLength={2000}/><button onClick={addNote} disabled={!noteInput.trim()}><Plus size={18}/> Add note</button></div><small className="draft-hint">Your unfinished note stays here if you close and reopen the app.</small>{active.notes.length > 0 && <div className="note-list">{active.notes.map((note, i) => <div className="note-item" key={i}><span>{String(i + 1).padStart(2, "0")}</span><p>{note}</p><button aria-label="Remove note" onClick={() => setActive({ ...active, notes: active.notes.filter((_, n) => n !== i) })}><X size={15}/></button></div>)}</div>}</section>}
 
       <section className="history-section surface"><div className="section-heading history-heading"><div><span className="small-kicker">YOUR RECORD</span><h2>Shift history</h2></div><div className="history-actions"><button className="secondary-btn" onClick={() => openEdit()}><Plus size={17}/> Add manually</button><div className="export-wrap"><button className="primary-outline" disabled={!shifts.length || creatingSheet} onClick={() => setExportOpen(!exportOpen)}><ArrowDownToLine size={17}/> {creatingSheet ? "Creating…" : "Export"} <ChevronDown size={15}/></button>{exportOpen && <div className="export-menu"><button onClick={exportGoogleSheet}><FileSpreadsheet size={18}/><span><strong>Create Google Sheet</strong><small>Save hours directly to your Drive</small></span></button><button onClick={() => exportCsv(false)}><FileSpreadsheet size={18}/><span><strong>Download hours CSV</strong><small>Import into Google Sheets anytime</small></span></button><button onClick={() => exportCsv(true)}><FileSpreadsheet size={18}/><span><strong>Detailed log CSV</strong><small>Includes notes and AI summaries</small></span></button><button onClick={() => { download("routehours-backup.json", JSON.stringify({ shifts, active }, null, 2), "application/json"); setExportOpen(false); }}><ArrowDownToLine size={18}/><span><strong>Backup data</strong><small>Save a copy you can restore later</small></span></button></div>}</div></div></div>
         {sorted.length === 0 ? <div className="empty-state"><div className="empty-illustration"><Clock3 size={32}/></div><h3>Your shifts will show up here</h3><p>Start the timer for your next bus ride, or add a past shift manually.</p></div> : <div className="shift-list">{sorted.map(shift => { const open = expanded === shift.id; return <div className={`shift-item ${open ? "expanded" : ""}`} key={shift.id}><button className="shift-summary" onClick={() => setExpanded(open ? null : shift.id)} aria-expanded={open}><span className="shift-date-icon"><CalendarDays size={18}/></span><span className="shift-main"><strong>{formatDay(shift.start)}</strong><small>{formatTime(shift.start)} <ArrowRight size={13}/> {formatTime(shift.end)}</small></span><span className="shift-duration">{durationLabel(minutesBetween(shift.start, shift.end))}</span><ChevronDown className="shift-chevron" size={18}/></button>{open && <div className="shift-detail"><div className="detail-grid"><div><span className="detail-label">STARTED</span><strong>{new Date(shift.start).toLocaleString("en-GB")}</strong></div><div><span className="detail-label">FINISHED</span><strong>{new Date(shift.end).toLocaleString("en-GB")}</strong></div><div><span className="detail-label">DECIMAL HOURS</span><strong>{(minutesBetween(shift.start, shift.end) / 60).toFixed(2)} h</strong></div></div><div className="detail-notes"><span className="detail-label">YOUR NOTES</span>{shift.notes.length ? shift.notes.map((note, i) => <p key={i}>• {note}</p>) : <p className="muted">No notes recorded.</p>}</div>{shift.summaryStatus === "pending" && <div className="ai-panel"><Sparkles size={18}/><span>Creating your summary…</span><span className="mini-spinner"/></div>}{shift.summary && <div className="summary-panel"><div className="summary-title"><Sparkles size={17}/> AI SHIFT SUMMARY</div><p>{shift.summary.overview}</p>{([ ["Activities", shift.summary.activities], ["Notable moments", shift.summary.notable], ["Follow-up", shift.summary.followUp] ] as const).map(([title, values]) => values.length > 0 && <div className="summary-group" key={title}><strong>{title}</strong><ul>{values.map((value, i) => <li key={i}>{value}</li>)}</ul></div>)}</div>}{shift.summaryStatus === "error" && shift.summaryError && <p className="summary-error" role="alert">{shift.summaryError}</p>}{(!shift.summary || shift.summaryStatus === "error") && <button className="text-action" onClick={() => retrySummary(shift)}><Sparkles size={16}/>{shift.summaryStatus === "error" ? "Retry AI summary" : "Generate AI summary"}</button>}<div className="shift-controls"><button onClick={() => openEdit(shift)}><Pencil size={15}/> Edit shift</button><button className="danger" onClick={() => deleteShift(shift.id)}><Trash2 size={15}/> Delete</button></div></div>}</div>; })}</div>}
@@ -362,20 +502,29 @@ export default function Home() {
     {settingsOpen && <div className="modal-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) setSettingsOpen(false); }}><div className="modal settings-modal" role="dialog" aria-modal="true" aria-label="Settings">
       <div className="modal-head"><div><span className="small-kicker">PREFERENCES</span><h2>Settings</h2></div><button className="icon-btn" aria-label="Close" onClick={() => setSettingsOpen(false)}><X size={19}/></button></div>
       <div className="setting-block">
-        <div className="setting-title"><span className="setting-icon"><Sparkles size={19}/></span><div><strong>Automatic AI summaries</strong><p>Organize your notes when you stop a shift.</p></div><button className={`toggle ${aiEnabled ? "on" : ""}`} role="switch" aria-checked={aiEnabled} aria-label="Automatic AI summaries" onClick={() => setAiEnabled(!aiEnabled)}><span/></button></div>
-        <label className="access-label">Gemini API key <small>Get yours from <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">Google AI Studio</a>.</small><input type="password" value={geminiApiKey} onChange={e => { setGeminiApiKey(e.target.value); setAiEnabled(false); setAiConnection(null); }} placeholder="Paste your Gemini API key" autoComplete="off" spellCheck={false}/></label>
-        <div className="ai-connection-actions"><button className="modal-submit" disabled={checkingAi || !(geminiApiKey.trim() || accessCode.trim())} onClick={() => void testAiConnection()}>{checkingAi ? "Checking Gemini…" : "Test & connect Gemini"} <Sparkles size={16}/></button>{geminiApiKey && <button className="clear-key" onClick={() => { setGeminiApiKey(""); setAiEnabled(false); setAiConnection(null); }}>Remove key</button>}</div>
+        <div className="setting-title"><span className="setting-icon"><Sparkles size={19}/></span><div><strong>Automatic AI summaries</strong><p>Organize your notes when you stop a shift.</p></div><button className={`toggle ${aiEnabled ? "on" : ""}`} role="switch" aria-checked={aiEnabled} aria-label="Automatic AI summaries" onClick={() => { setAiEnabled(!aiEnabled); setSettingsSaved(false); }}><span/></button></div>
+        <label className="access-label">Gemini API key <small>Get yours from <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">Google AI Studio</a>.</small><input type="password" value={geminiApiKey} onChange={e => { setGeminiApiKey(e.target.value); setAiEnabled(false); setAiConnection(null); setSettingsSaved(false); }} placeholder="Paste your Gemini API key" autoComplete="off" spellCheck={false}/></label>
+        <div className="ai-connection-actions"><button className="modal-submit" disabled={checkingAi || !(geminiApiKey.trim() || accessCode.trim())} onClick={() => void testAiConnection()}>{checkingAi ? "Checking Gemini…" : "Test & connect Gemini"} <Sparkles size={16}/></button>{geminiApiKey && <button className="clear-key" onClick={() => { setGeminiApiKey(""); setAiEnabled(false); setAiConnection(null); setSettingsSaved(false); }}>Remove key</button>}</div>
         {aiConnection && <p className={`connection-result ${aiConnection.ok ? "success" : "error"}`} role="status">{aiConnection.ok ? <Check size={17}/> : <X size={17}/>} {aiConnection.message}</p>}
-        <details className="advanced-ai"><summary>Using a server access code instead?</summary><label>Server access code<input type="password" value={accessCode} onChange={e => { setAccessCode(e.target.value); setAiConnection(null); }} placeholder="Only if configured in Vercel" autoComplete="off"/></label><p>This needs GEMINI_API_KEY and APP_ACCESS_TOKEN set on the server. A Gemini API key belongs in the field above.</p></details>
+        <details className="advanced-ai"><summary>Using a server access code instead?</summary><label>Server access code<input type="password" value={accessCode} onChange={e => { setAccessCode(e.target.value); setAiConnection(null); setSettingsSaved(false); }} placeholder="Only if configured in Vercel" autoComplete="off"/></label><p>This needs GEMINI_API_KEY and APP_ACCESS_TOKEN set on the server. A Gemini API key belongs in the field above.</p></details>
         <p className="privacy-note"><LockKeyhole size={16}/>Your key stays in this browser and is excluded from backups. RouteHours sends it through its server to Google when you test or create a summary. Use only de-identified, work-approved notes.</p>
       </div>
       <div className="setting-block">
+        <div className="setting-title"><span className="setting-icon"><Mic size={19}/></span><div><strong>Voice dictation with Groq</strong><p>Fast speech to text for your notes and voice commands.</p></div></div>
+        <label className="access-label">Groq API key <small>Get yours from <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer">Groq Console</a>.</small><input type="password" value={groqApiKey} onChange={e => { setGroqApiKey(e.target.value); setGroqConnection(null); setSettingsSaved(false); }} placeholder="Paste your Groq API key" autoComplete="off" spellCheck={false}/></label>
+        <label className="dictation-language">Dictation language<select value={dictationLanguage} onChange={e => { setDictationLanguage(e.target.value as DictationLanguage); setSettingsSaved(false); }}><option value="auto">Detect automatically</option><option value="en">English</option><option value="da">Danish</option><option value="ar">Arabic</option></select></label>
+        <div className="ai-connection-actions"><button className="modal-submit groq-test" disabled={checkingGroq || !groqApiKey.trim()} onClick={() => void testGroqConnection()}>{checkingGroq ? "Checking Groq…" : "Test Groq key"} <Mic size={16}/></button>{groqApiKey && <button className="clear-key" onClick={() => { setGroqApiKey(""); setGroqConnection(null); setSettingsSaved(false); }}>Remove key</button>}</div>
+        {groqConnection && <p className={`connection-result ${groqConnection.ok ? "success" : "error"}`} role="status">{groqConnection.ok ? <Check size={17}/> : <X size={17}/>} {groqConnection.message}</p>}
+        <p className="privacy-note"><LockKeyhole size={16}/>With a Groq key saved, the mic records up to one minute and sends that audio to Groq when you finish. RouteHours keeps the text, not the audio. Speak only your own notes and avoid identifying children.</p>
+      </div>
+      <div className="setting-block">
         <div className="setting-title"><span className="setting-icon"><FileSpreadsheet size={19}/></span><div><strong>Google Sheets export</strong><p>Create a new hours spreadsheet in your Drive.</p></div></div>
-        <label className="access-label">OAuth client ID <small>Paste the <b>Web application</b> client ID from <a href="https://console.cloud.google.com/auth/clients" target="_blank" rel="noopener noreferrer">Google Cloud clients</a>. Do not paste the client secret.</small><input type="text" value={googleClientId} onChange={e => setGoogleClientId(e.target.value.trim())} placeholder="...apps.googleusercontent.com" autoComplete="off" autoCapitalize="none" spellCheck={false}/></label>
+        <label className="access-label">OAuth client ID <small>Paste the <b>Web application</b> client ID from <a href="https://console.cloud.google.com/auth/clients" target="_blank" rel="noopener noreferrer">Google Cloud clients</a>. Do not paste the client secret.</small><input type="text" value={googleClientId} onChange={e => { setGoogleClientId(e.target.value.trim()); setSettingsSaved(false); }} placeholder="...apps.googleusercontent.com" autoComplete="off" autoCapitalize="none" spellCheck={false}/></label>
         <p className="origin-help">In that OAuth client, add <code>{window.location.origin}</code> under <b>Authorized JavaScript origins</b>. Also enable the Google Sheets API and add your Google account as a test user if the app is in testing.</p>
         <p className="origin-help">After saving the client ID here, tap <b>Export → Create Google Sheet</b>. Your hours are sent directly from this browser to Google.</p>
       </div>
       <div className="setting-block"><div className="setting-title"><span className="setting-icon"><RotateCcw size={19}/></span><div><strong>Restore a backup</strong><p>Replace this browser’s history from a RouteHours JSON file.</p></div></div><input ref={importing} type="file" accept="application/json,.json" className="sr-only" onChange={e => void importBackup(e.target.files?.[0])}/><button className="secondary-btn restore-btn" onClick={() => importing.current?.click()}>Choose backup file <ArrowRight size={16}/></button></div>
+      <div className="settings-save-bar"><button className="modal-submit" onClick={saveSettings}><Check size={17}/> Save settings</button>{settingsSaved && <span className="settings-saved" role="status"><Check size={15}/> Saved in this browser. Your settings will still be here when you reopen the app.</span>}{settingsSaveError && <span className="settings-save-error" role="alert">{settingsSaveError}</span>}</div>
     </div></div>}
     {installOpen && <div className="modal-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) setInstallOpen(false); }}><div className="modal install-modal" role="dialog" aria-modal="true" aria-label="Install RouteHours"><div className="modal-head"><div><span className="small-kicker">ON YOUR PHONE</span><h2>Install RouteHours</h2></div><button className="icon-btn" aria-label="Close" onClick={() => setInstallOpen(false)}><X size={19}/></button></div><p>Open your deployed RouteHours website in your phone browser, then add it to your Home Screen:</p><div className="install-steps"><strong>iPhone · Safari</strong><ol><li>Tap Share.</li><li>Tap <b>Add to Home Screen</b>.</li><li>Turn on <b>Open as Web App</b>, then tap Add.</li></ol></div><div className="install-steps"><strong>Android · Chrome</strong><ol><li>Tap the three-dot menu.</li><li>Tap <b>Install app</b> or <b>Install and create shortcut</b>.</li><li>Confirm Install.</li></ol></div><p className="install-fine">Use the new Home Screen icon for your shifts. Your records stay in that browser installation, so export a backup regularly.</p></div></div>}
   </div>;
