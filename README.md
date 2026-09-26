@@ -6,11 +6,12 @@ A personal web app for tracking bus shifts. Start the timer when you board, stop
 
 - Start/stop timer based on saved timestamps, so reloading the page does not reset a running shift.
 - Voice commands: “start shift”, “stop shift”, “add note …”, and “log 2 hours”. Spoken questions such as “How do I export?” open Ask RouteHours. Timer commands need confirmation. A spoken duration opens a manual entry for review because it does not establish when the work happened. With a Groq key, the microphone records short clips and uses Whisper transcription; without one, it uses browser speech recognition where available.
-- Add, edit, and delete shifts. Weekly and monthly totals use the shift's start date.
+- Add, edit, and delete shifts. Filter or search history locally, and copy a shift's hours for a message. Weekly and monthly totals use the shift's start date. An optional weekly goal shows progress from logged shifts.
+- Light and dark themes with a System option, an animated dashboard, a phone navigation dock, and blank note prompts for timing, support, and follow-up.
 - Automatic sectioned Gemini summary when AI is connected. Settings lets you enter and test your own Gemini API key; a failed summary does not lose the shift and can be retried.
 - Create an actual Google Sheet in your Drive and optionally share it with a recipient by email, or download an hours CSV for Google Sheets. A separate detailed CSV includes notes and summaries.
 - Ask RouteHours uses Gemini and an app-specific guide to explain controls and suggest note structure. It receives the current shift count and totals; when the question concerns notes, it also receives the active note draft. It cannot change records or see Google account settings.
-- JSON backup and restore. Data and unfinished note drafts are stored in this browser's local storage, with no account or cross-device sync.
+- JSON backup and restore. Data and unfinished note drafts are stored in this browser's local storage, with no account or cross-device sync. Backups contain shifts and an active timer, but not settings or credentials.
 
 ## Run locally
 

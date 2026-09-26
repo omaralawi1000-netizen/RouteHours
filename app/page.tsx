@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Activity, ArrowDownToLine, ArrowRight, CalendarDays, Check, ChevronDown, Clock3, Download, FileSpreadsheet, Info, LockKeyhole, Mail, MessageCircle, Mic, MicOff, Pause, Pencil, Play, Plus, RotateCcw, Send, Settings2, ShieldCheck, Sparkles, Trash2, X } from "lucide-react";
+import { Activity, ArrowDownToLine, ArrowRight, CalendarDays, Check, ChevronDown, Clipboard, Clock3, Download, FileSpreadsheet, History, Info, LockKeyhole, Mail, MessageCircle, Mic, MicOff, Moon, Pause, Pencil, Play, Plus, RotateCcw, Search, Send, Settings2, ShieldCheck, Sparkles, Sun, Trash2, X } from "lucide-react";
 import { durationLabel, localDateKey, minutesBetween, shiftsCsv, thisWeekStart, type ActiveShift, type Shift } from "@/lib/time";
 import { createGoogleSheet, shareGoogleSheet } from "@/lib/sheets";
 import { interpretVoice } from "@/lib/voice";
@@ -14,7 +14,9 @@ type GoogleTokenClient = { requestAccessToken: () => void };
 type GoogleWindow = Window & { google?: { accounts: { oauth2: { initTokenClient: (config: { client_id: string; scope: string; callback: (response: { access_token?: string; error?: string }) => void; error_callback?: (error: { type?: string }) => void }) => GoogleTokenClient } } } };
 type InstallPrompt = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> };
 type DictationLanguage = "auto" | "en" | "da" | "ar";
-type StoredData = { shifts: Shift[]; active: ActiveShift | null; noteDraft: string; aiEnabled: boolean; accessCode: string; geminiApiKey: string; groqApiKey: string; dictationLanguage: DictationLanguage; googleClientId: string };
+type ThemeMode = "system" | "light" | "dark";
+type HistoryRange = "all" | "week" | "month";
+type StoredData = { shifts: Shift[]; active: ActiveShift | null; noteDraft: string; aiEnabled: boolean; accessCode: string; geminiApiKey: string; groqApiKey: string; dictationLanguage: DictationLanguage; googleClientId: string; themeMode: ThemeMode; weeklyGoalHours: number };
 
 function readStored(): StoredData {
   try {
@@ -29,8 +31,10 @@ function readStored(): StoredData {
       groqApiKey: typeof value?.groqApiKey === "string" ? value.groqApiKey : "",
       dictationLanguage: value?.dictationLanguage === "en" || value?.dictationLanguage === "da" || value?.dictationLanguage === "ar" ? value.dictationLanguage : "auto",
       googleClientId: typeof value?.googleClientId === "string" ? value.googleClientId : "",
+      themeMode: value?.themeMode === "light" || value?.themeMode === "dark" ? value.themeMode : "system",
+      weeklyGoalHours: typeof value?.weeklyGoalHours === "number" && Number.isFinite(value.weeklyGoalHours) ? Math.max(0, Math.min(80, value.weeklyGoalHours)) : 0,
     };
-  } catch { return { shifts: [], active: null, noteDraft: "", aiEnabled: false, accessCode: "", geminiApiKey: "", groqApiKey: "", dictationLanguage: "auto", googleClientId: "" }; }
+  } catch { return { shifts: [], active: null, noteDraft: "", aiEnabled: false, accessCode: "", geminiApiKey: "", groqApiKey: "", dictationLanguage: "auto", googleClientId: "", themeMode: "system", weeklyGoalHours: 0 }; }
 }
 
 function formatTime(value: string) { return new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit" }).format(new Date(value)); }
@@ -71,6 +75,7 @@ function normalizeClientId(value: string) {
 
 function validClientId(value: string) { return /^[\w-]+\.apps\.googleusercontent\.com$/.test(value); }
 function validEmail(value: string) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim()); }
+function cleanNoteDraft(value: string) { return value.split("\n").map(line => line.trim()).filter(line => line && !/^(Route timing|Support provided|Follow-up):$/i.test(line)).join("\n"); }
 
 export default function Home() {
   const [loaded, setLoaded] = useState(false);
@@ -84,6 +89,11 @@ export default function Home() {
   const [checkingGroq, setCheckingGroq] = useState(false);
   const [groqConnection, setGroqConnection] = useState<{ ok: boolean; message: string } | null>(null);
   const [googleClientId, setGoogleClientId] = useState("");
+  const [themeMode, setThemeMode] = useState<ThemeMode>("system");
+  const [prefersDark, setPrefersDark] = useState(false);
+  const [weeklyGoalHours, setWeeklyGoalHours] = useState(0);
+  const [historyRange, setHistoryRange] = useState<HistoryRange>("all");
+  const [historyQuery, setHistoryQuery] = useState("");
   const [checkingAi, setCheckingAi] = useState(false);
   const [aiConnection, setAiConnection] = useState<{ ok: boolean; message: string } | null>(null);
   const [now, setNow] = useState(Date.now());
@@ -140,7 +150,7 @@ export default function Home() {
 
   useEffect(() => {
     const saved = readStored();
-    setShifts(saved.shifts); setActive(saved.active); setNoteInput(saved.noteDraft); setAiEnabled(saved.aiEnabled); setAccessCode(saved.accessCode); setGeminiApiKey(saved.geminiApiKey); setGroqApiKey(saved.groqApiKey); setDictationLanguage(saved.dictationLanguage); setGoogleClientId(saved.googleClientId); setLoaded(true);
+    setShifts(saved.shifts); setActive(saved.active); setNoteInput(saved.noteDraft); setAiEnabled(saved.aiEnabled); setAccessCode(saved.accessCode); setGeminiApiKey(saved.geminiApiKey); setGroqApiKey(saved.groqApiKey); setDictationLanguage(saved.dictationLanguage); setGoogleClientId(saved.googleClientId); setThemeMode(saved.themeMode); setWeeklyGoalHours(saved.weeklyGoalHours); setLoaded(true);
     const speechWindow = window as Window & { SpeechRecognition?: new () => Recognition; webkitSpeechRecognition?: new () => Recognition };
     setVoiceSupported(Boolean(speechWindow.SpeechRecognition || speechWindow.webkitSpeechRecognition));
     setInstalled(window.matchMedia("(display-mode: standalone)").matches || Boolean((navigator as Navigator & { standalone?: boolean }).standalone));
@@ -156,6 +166,19 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    if (!loaded) return;
+    document.documentElement.dataset.theme = themeMode;
+    document.documentElement.style.colorScheme = themeMode === "system" ? "light dark" : themeMode;
+  }, [loaded, themeMode]);
+
+  useEffect(() => {
+    const query = window.matchMedia("(prefers-color-scheme: dark)");
+    const update = () => setPrefersDark(query.matches);
+    update(); query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+
+  useEffect(() => {
     const onPrompt = (event: Event) => { event.preventDefault(); installPrompt.current = event as InstallPrompt; };
     const onInstalled = () => { setInstalled(true); setInstallOpen(false); installPrompt.current = null; };
     window.addEventListener("beforeinstallprompt", onPrompt);
@@ -165,9 +188,9 @@ export default function Home() {
 
   useEffect(() => {
     if (!loaded) return;
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ shifts, active, noteDraft: noteInput, aiEnabled, accessCode, geminiApiKey, groqApiKey, dictationLanguage, googleClientId })); }
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ shifts, active, noteDraft: noteInput, aiEnabled, accessCode, geminiApiKey, groqApiKey, dictationLanguage, googleClientId, themeMode, weeklyGoalHours })); }
     catch { setNotice("Browser storage is unavailable. Export your hours before closing this page."); }
-  }, [loaded, shifts, active, noteInput, aiEnabled, accessCode, geminiApiKey, groqApiKey, dictationLanguage, googleClientId]);
+  }, [loaded, shifts, active, noteInput, aiEnabled, accessCode, geminiApiKey, groqApiKey, dictationLanguage, googleClientId, themeMode, weeklyGoalHours]);
 
   useEffect(() => {
     if (!loaded || !aiEnabled || !(geminiApiKey || accessCode)) return;
@@ -196,6 +219,14 @@ export default function Home() {
   const weekMinutes = weekShifts.reduce((sum, s) => sum + minutesBetween(s.start, s.end), 0);
   const monthKey = localDateKey(new Date(now).toISOString()).slice(0, 7);
   const monthMinutes = shifts.filter(s => localDateKey(s.start).startsWith(monthKey)).reduce((sum, s) => sum + minutesBetween(s.start, s.end), 0);
+  const goalMinutes = weeklyGoalHours * 60;
+  const goalPercent = goalMinutes > 0 ? Math.min(100, Math.round(weekMinutes / goalMinutes * 100)) : 0;
+  const filteredShifts = useMemo(() => sorted.filter(shift => {
+    if (historyRange === "week" && new Date(shift.start).getTime() < weekStart) return false;
+    if (historyRange === "month" && !localDateKey(shift.start).startsWith(monthKey)) return false;
+    const query = historyQuery.trim().toLocaleLowerCase();
+    return !query || [formatDay(shift.start), localDateKey(shift.start), ...shift.notes, shift.summary?.overview || ""].join(" ").toLocaleLowerCase().includes(query);
+  }), [sorted, historyRange, historyQuery, weekStart, monthKey]);
   const activeSeconds = active ? Math.max(0, Math.floor((now - new Date(active.start).getTime()) / 1000)) : 0;
   const weekDays = Array.from({ length: 7 }, (_, i) => {
     const date = new Date(thisWeekStart(new Date(now)));
@@ -204,6 +235,7 @@ export default function Home() {
     return { label: ["M", "T", "W", "T", "F", "S", "S"][i], minutes, today: localDateKey(date.toISOString()) === localDateKey(new Date(now).toISOString()) };
   });
   const maxDaily = Math.max(180, ...weekDays.map(d => d.minutes));
+  const isDarkTheme = themeMode === "dark" || themeMode === "system" && prefersDark;
 
   function startShift() {
     setActive({ start: new Date().toISOString(), notes: [] });
@@ -213,7 +245,8 @@ export default function Home() {
   function stopShift() {
     if (!active) return;
     const end = new Date().toISOString();
-    const notes = noteInput.trim() ? [...active.notes, noteInput.trim()] : active.notes;
+    const draft = cleanNoteDraft(noteInput);
+    const notes = draft ? [...active.notes, draft] : active.notes;
     const willSummarize = aiEnabled && Boolean(geminiApiKey || accessCode);
     const shift: Shift = { id: crypto.randomUUID(), start: active.start, end, notes, summaryStatus: willSummarize ? "pending" : undefined };
     setShifts(current => [shift, ...current]);
@@ -221,10 +254,20 @@ export default function Home() {
     setNotice(willSummarize ? "Shift saved. Gemini is preparing your summary below." : "Shift saved. Connect Gemini in Settings to create an AI summary.");
   }
   function addNote() {
-    const note = noteInput.trim();
+    const note = cleanNoteDraft(noteInput);
     if (!note || !active) return;
     setActive({ ...active, notes: [...active.notes, note] });
     setNoteInput("");
+  }
+  function insertNotePrompt(prompt: string) {
+    setNoteInput(current => `${current.trim() ? `${current.trim()}\n` : ""}${prompt}: `.slice(0, 2000));
+    window.setTimeout(() => document.getElementById("quick-note-input")?.focus(), 0);
+  }
+  async function copyShiftHours(shift: Shift) {
+    const minutes = minutesBetween(shift.start, shift.end);
+    const text = `RouteHours · ${formatDay(shift.start)}\nStart: ${new Date(shift.start).toLocaleString("en-GB")}\nEnd: ${new Date(shift.end).toLocaleString("en-GB")}\nHours: ${durationLabel(minutes)} (${(minutes / 60).toFixed(2)} decimal hours)`;
+    try { await navigator.clipboard.writeText(text); setNotice("Shift hours copied. You can paste them into a message."); }
+    catch { setNotice("Clipboard unavailable. You can still use Export → Download hours CSV."); }
   }
   function handleVoiceTranscript(transcript: string) {
     const heard = transcript.trim();
@@ -427,7 +470,7 @@ export default function Home() {
     const normalizedId = normalizeClientId(googleClientId);
     if (normalizedId && !validClientId(normalizedId)) { setSettingsSaved(false); setSettingsSaveError("This is not a Web application OAuth client ID. Paste the value ending in .apps.googleusercontent.com, or its downloaded JSON file contents."); return; }
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ shifts, active, noteDraft: noteInput, aiEnabled, accessCode, geminiApiKey, groqApiKey, dictationLanguage, googleClientId: normalizedId }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ shifts, active, noteDraft: noteInput, aiEnabled, accessCode, geminiApiKey, groqApiKey, dictationLanguage, googleClientId: normalizedId, themeMode, weeklyGoalHours }));
       if (JSON.parse(localStorage.getItem(STORAGE_KEY) || "null")?.googleClientId !== normalizedId) throw new Error("Storage verification failed");
       setGoogleClientId(normalizedId);
       setSettingsSaved(true);
@@ -436,6 +479,10 @@ export default function Home() {
       setSettingsSaved(false);
       setSettingsSaveError("Could not save on this device. Check that browser storage is allowed.");
     }
+  }
+  function toggleTheme() {
+    setThemeMode(isDarkTheme ? "light" : "dark");
+    setSettingsSaved(false);
   }
   function deleteShift(id: string) {
     if (!window.confirm("Delete this shift? This cannot be undone unless you have a backup.")) return;
@@ -506,20 +553,26 @@ export default function Home() {
     <div className="ambient ambient-one"/><div className="ambient ambient-two"/>
     <header className="topbar container">
       <div className="brand"><div className="brand-mark"><Activity size={22} strokeWidth={2.6}/></div><div><strong>RouteHours</strong><span>Bus shift tracker</span></div></div>
-      <div className="top-actions"><span className="today-pill"><CalendarDays size={15}/>{new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short" }).format(new Date(now))}</span>{!installed && <button className="install-top" onClick={() => void openInstall()}><Download size={16}/> Install</button>}<button className="icon-btn" aria-label="Settings" onClick={() => setSettingsOpen(true)}><Settings2 size={19}/></button></div>
+      <div className="top-actions"><span className="today-pill"><CalendarDays size={15}/>{new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short" }).format(new Date(now))}</span>{!installed && <button className="install-top" onClick={() => void openInstall()}><Download size={16}/> Install</button>}<button className="icon-btn theme-button" aria-label={isDarkTheme ? "Switch to light mode" : "Switch to dark mode"} title={isDarkTheme ? "Switch to light mode" : "Switch to dark mode"} onClick={toggleTheme}>{isDarkTheme ? <Sun size={19}/> : <Moon size={19}/>}</button><button className="icon-btn" aria-label="Settings" onClick={() => setSettingsOpen(true)}><Settings2 size={19}/></button></div>
     </header>
 
     <main className="container main-grid">
-      <section className="hero"><div className="eyebrow"><span className="eyebrow-line"/> YOUR WORK, CLEARLY COUNTED</div><h1>Every minute<br/><em>matters.</em></h1><p>A simple place to track your time on the bus, keep useful notes, and leave with a clear record of each shift.</p></section>
+      <section className="hero"><div className="eyebrow"><span className="eyebrow-line"/> YOUR WORK, CLEARLY COUNTED</div><h1>Every minute<br/><em>matters.</em></h1><p>Start when you board. Stop when you leave. Keep a clear record of your hours and the details worth remembering.</p><div className="hero-signals"><span><span className="signal-dot"/> {active ? "Shift in progress" : "Ready for your next shift"}</span><span><ShieldCheck size={15}/> Saved on this device</span></div></section>
 
-      <section className={`timer-card ${active ? "is-active" : ""}`} aria-label="Shift timer">
+      <section id="timer" className={`timer-card ${active ? "is-active" : ""}`} aria-label="Shift timer">
         <div className="timer-card-top"><span className="card-kicker"><span className="status-dot"/>{active ? "SHIFT IN PROGRESS" : "READY WHEN YOU ARE"}</span><Clock3 size={20}/></div>
         <div className="timer-center"><span className="timer-caption">{active ? "Current shift" : "Your next shift"}</span><div className="timer-digits" aria-live="off">{active ? clock(activeSeconds) : "00:00:00"}</div><span className="timer-sub">{active ? `Started at ${formatTime(active.start)}` : "Tap start when you get on the bus"}</span></div>
         <button className={`timer-button ${active ? "stop" : "start"}`} onClick={active ? stopShift : startShift}>{active ? <><Pause size={20} fill="currentColor"/> Stop & save shift</> : <><Play size={20} fill="currentColor"/> Start shift</>}</button>
         <div className="timer-foot"><ShieldCheck size={15}/>Timer uses actual start and end times, even if you close the tab.</div>
       </section>
 
-      <section className={`voice-studio ${listening || recording ? "is-listening" : ""} ${transcribing ? "is-transcribing" : ""}`} aria-label="Voice controls">
+      <div className="stats-row" aria-label="Hours overview">
+        <div className="stat-card week-card"><span className="stat-icon mint"><Clock3 size={19}/></span><span className="stat-label">THIS WEEK</span><strong>{durationLabel(weekMinutes)}</strong><small>{weekShifts.length} {weekShifts.length === 1 ? "shift" : "shifts"} logged</small>{goalMinutes > 0 ? <div className="goal-progress"><div className="goal-track" role="progressbar" aria-label="Weekly goal progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={goalPercent}><span style={{ width: `${goalPercent}%` }}/></div><span>{goalPercent}% of {weeklyGoalHours}h goal</span></div> : <button className="goal-link" onClick={() => setSettingsOpen(true)}>Set a weekly goal <ArrowRight size={13}/></button>}</div>
+        <div className="stat-card"><span className="stat-icon peach"><CalendarDays size={19}/></span><span className="stat-label">THIS MONTH</span><strong>{durationLabel(monthMinutes)}</strong><small>{shifts.filter(s => localDateKey(s.start).startsWith(monthKey)).length} shifts logged</small></div>
+        <div className="stat-card chart-card"><div className="chart-head"><span className="stat-label">YOUR WEEK AT A GLANCE</span><span>Mon–Sun</span></div><div className="bar-chart">{weekDays.map((day, i) => <div className="bar-col" key={i} title={`${day.minutes} minutes`}><div className="bar-track"><div className={`bar-fill ${day.today ? "today" : ""}`} style={{ height: `${Math.max(day.minutes ? 8 : 3, day.minutes / maxDaily * 100)}%` }}/></div><span>{day.label}</span></div>)}</div></div>
+      </div>
+
+      <section id="voice" className={`voice-studio ${listening || recording ? "is-listening" : ""} ${transcribing ? "is-transcribing" : ""}`} aria-label="Voice controls">
         <div className="voice-studio-glow" aria-hidden="true"/>
         <div className="voice-studio-copy">
           <span className="voice-eyebrow"><span className="voice-live-dot"/>{recording ? `RECORDING · ${Math.floor(recordSeconds / 60)}:${String(recordSeconds % 60).padStart(2, "0")}` : transcribing ? "GROQ IS TRANSCRIBING" : listening ? "LISTENING NOW" : groqApiKey ? "GROQ DICTATION" : "VOICE SHORTCUTS"}</span>
@@ -542,20 +595,18 @@ export default function Home() {
 
       <section className="assistant-card surface" aria-label="Ask RouteHours"><div className="assistant-heading"><span className="assistant-icon"><MessageCircle size={22}/></span><div><span className="small-kicker">APP GUIDE · GEMINI</span><h2>Ask RouteHours</h2><p>Ask by voice or type. Get help with the app or with structuring a note.</p></div></div><div className="assistant-prompts"><button onClick={() => void askAssistant("How do I export and email my hours?")}>Export & email</button><button onClick={() => void askAssistant("How should I structure a useful shift note?")}>Structure a note</button><button onClick={() => void askAssistant("How do I set up Google Sheets?")}>Set up Sheets</button></div><form className="assistant-form" onSubmit={e => { e.preventDefault(); void askAssistant(); }}><input value={assistantQuestion} onChange={e => setAssistantQuestion(e.target.value)} maxLength={1200} placeholder="Ask about hours, notes, voice, or exports…" aria-label="Question for RouteHours"/><button disabled={!assistantQuestion.trim() || assistantBusy} aria-label="Ask question"><Send size={18}/></button></form>{(assistantOpen || assistantBusy) && <div className="assistant-reply" aria-live="polite"><div><Sparkles size={17}/><strong>RouteHours guide</strong>{assistantBusy && <span className="mini-spinner"/>}</div>{assistantBusy ? <p>Thinking through your question…</p> : assistantError ? <p className="assistant-error">{assistantError} {(!geminiApiKey && !accessCode) && <button onClick={() => setSettingsOpen(true)}>Open Settings</button>}</p> : <p>{assistantAnswer}</p>}</div>}<small>For note help, your active note draft is sent to Gemini with your question. Leave out identifying details.</small></section>
 
-      <div className="stats-row">
-        <div className="stat-card"><span className="stat-icon mint"><Clock3 size={19}/></span><span className="stat-label">THIS WEEK</span><strong>{durationLabel(weekMinutes)}</strong><small>{weekShifts.length} {weekShifts.length === 1 ? "shift" : "shifts"} logged</small></div>
-        <div className="stat-card"><span className="stat-icon peach"><CalendarDays size={19}/></span><span className="stat-label">THIS MONTH</span><strong>{durationLabel(monthMinutes)}</strong><small>{shifts.filter(s => localDateKey(s.start).startsWith(monthKey)).length} shifts logged</small></div>
-        <div className="stat-card chart-card"><div className="chart-head"><span className="stat-label">YOUR WEEK AT A GLANCE</span><span>Mon–Sun</span></div><div className="bar-chart">{weekDays.map((day, i) => <div className="bar-col" key={i} title={`${day.minutes} minutes`}><div className="bar-track"><div className={`bar-fill ${day.today ? "today" : ""}`} style={{ height: `${Math.max(day.minutes ? 8 : 3, day.minutes / maxDaily * 100)}%` }}/></div><span>{day.label}</span></div>)}</div></div>
-      </div>
+      {active && <section id="quick-notes" className="notes-card surface"><div className="section-heading"><div><span className="small-kicker">ON THE ROUTE</span><h2>Quick notes</h2></div><span className="live-badge"><span/> Live shift</span></div><p>Capture the useful details while they are fresh. Leave out children’s names and identifying information.</p><div className="note-prompts" aria-label="Note prompts"><span>Start with a prompt</span>{["Route timing", "Support provided", "Follow-up"].map(prompt => <button key={prompt} onClick={() => insertNotePrompt(prompt)}>{prompt} <Plus size={13}/></button>)}</div><div className="note-compose"><textarea id="quick-note-input" value={noteInput} onChange={e => setNoteInput(e.target.value)} placeholder="What happened? Keep it short and factual." maxLength={2000}/><button onClick={addNote} disabled={!cleanNoteDraft(noteInput)}><Plus size={18}/> Add note</button></div><small className="draft-hint">Your unfinished note stays here if you close and reopen the app.</small>{active.notes.length > 0 && <div className="note-list">{active.notes.map((note, i) => <div className="note-item" key={i}><span>{String(i + 1).padStart(2, "0")}</span><p>{note}</p><button aria-label="Remove note" onClick={() => setActive({ ...active, notes: active.notes.filter((_, n) => n !== i) })}><X size={15}/></button></div>)}</div>}</section>}
 
-      {active && <section id="quick-notes" className="notes-card surface"><div className="section-heading"><div><span className="small-kicker">ON THE ROUTE</span><h2>Quick notes</h2></div><span className="live-badge"><span/> Live shift</span></div><p>Jot down practical details while they are fresh. Avoid children’s names, diagnoses, and identifying information.</p><div className="note-compose"><textarea value={noteInput} onChange={e => setNoteInput(e.target.value)} placeholder="Example: Route ran 10 minutes late; helped everyone get seated safely." maxLength={2000}/><button onClick={addNote} disabled={!noteInput.trim()}><Plus size={18}/> Add note</button></div><small className="draft-hint">Your unfinished note stays here if you close and reopen the app.</small>{active.notes.length > 0 && <div className="note-list">{active.notes.map((note, i) => <div className="note-item" key={i}><span>{String(i + 1).padStart(2, "0")}</span><p>{note}</p><button aria-label="Remove note" onClick={() => setActive({ ...active, notes: active.notes.filter((_, n) => n !== i) })}><X size={15}/></button></div>)}</div>}</section>}
-
-      <section className="history-section surface"><div className="section-heading history-heading"><div><span className="small-kicker">YOUR RECORD</span><h2>Shift history</h2></div><div className="history-actions"><button className="secondary-btn" onClick={() => openEdit()}><Plus size={17}/> Add manually</button><div className="export-wrap"><button className="primary-outline" disabled={!shifts.length || creatingSheet} onClick={() => setExportOpen(!exportOpen)}><ArrowDownToLine size={17}/> {creatingSheet ? "Creating…" : "Export"} <ChevronDown size={15}/></button>{exportOpen && <div className="export-menu"><button onClick={() => exportGoogleSheet()}><FileSpreadsheet size={18}/><span><strong>Create Google Sheet</strong><small>Save hours directly to your Drive</small></span></button><button onClick={() => { setShareRetryId(""); setShareError(""); setShareOpen(true); setExportOpen(false); }}><Mail size={18}/><span><strong>Create & email Google Sheet</strong><small>Share a new hours Sheet with someone</small></span></button><button onClick={() => exportCsv(false)}><FileSpreadsheet size={18}/><span><strong>Download hours CSV</strong><small>Import into Google Sheets anytime</small></span></button><button onClick={() => exportCsv(true)}><FileSpreadsheet size={18}/><span><strong>Detailed log CSV</strong><small>Includes notes and AI summaries</small></span></button><button onClick={() => { download("routehours-backup.json", JSON.stringify({ shifts, active }, null, 2), "application/json"); setExportOpen(false); }}><ArrowDownToLine size={18}/><span><strong>Backup data</strong><small>Save a copy you can restore later</small></span></button></div>}</div></div></div>
-        {sorted.length === 0 ? <div className="empty-state"><div className="empty-illustration"><Clock3 size={32}/></div><h3>Your shifts will show up here</h3><p>Start the timer for your next bus ride, or add a past shift manually.</p></div> : <div className="shift-list">{sorted.map(shift => { const open = expanded === shift.id; return <div className={`shift-item ${open ? "expanded" : ""}`} key={shift.id}><button className="shift-summary" onClick={() => setExpanded(open ? null : shift.id)} aria-expanded={open}><span className="shift-date-icon"><CalendarDays size={18}/></span><span className="shift-main"><strong>{formatDay(shift.start)}</strong><small>{formatTime(shift.start)} <ArrowRight size={13}/> {formatTime(shift.end)}</small></span><span className="shift-duration">{durationLabel(minutesBetween(shift.start, shift.end))}</span><ChevronDown className="shift-chevron" size={18}/></button>{open && <div className="shift-detail"><div className="detail-grid"><div><span className="detail-label">STARTED</span><strong>{new Date(shift.start).toLocaleString("en-GB")}</strong></div><div><span className="detail-label">FINISHED</span><strong>{new Date(shift.end).toLocaleString("en-GB")}</strong></div><div><span className="detail-label">DECIMAL HOURS</span><strong>{(minutesBetween(shift.start, shift.end) / 60).toFixed(2)} h</strong></div></div><div className="detail-notes"><span className="detail-label">YOUR NOTES</span>{shift.notes.length ? shift.notes.map((note, i) => <p key={i}>• {note}</p>) : <p className="muted">No notes recorded.</p>}</div>{shift.summaryStatus === "pending" && <div className="ai-panel"><Sparkles size={18}/><span>Creating your summary…</span><span className="mini-spinner"/></div>}{shift.summary && <div className="summary-panel"><div className="summary-title"><Sparkles size={17}/> AI SHIFT SUMMARY</div><p>{shift.summary.overview}</p>{([ ["Activities", shift.summary.activities], ["Notable moments", shift.summary.notable], ["Follow-up", shift.summary.followUp] ] as const).map(([title, values]) => values.length > 0 && <div className="summary-group" key={title}><strong>{title}</strong><ul>{values.map((value, i) => <li key={i}>{value}</li>)}</ul></div>)}</div>}{shift.summaryStatus === "error" && shift.summaryError && <p className="summary-error" role="alert">{shift.summaryError}</p>}{(!shift.summary || shift.summaryStatus === "error") && <button className="text-action" onClick={() => retrySummary(shift)}><Sparkles size={16}/>{shift.summaryStatus === "error" ? "Retry AI summary" : "Generate AI summary"}</button>}<div className="shift-controls"><button onClick={() => openEdit(shift)}><Pencil size={15}/> Edit shift</button><button className="danger" onClick={() => deleteShift(shift.id)}><Trash2 size={15}/> Delete</button></div></div>}</div>; })}</div>}
+      <section id="history" className="history-section surface"><div className="section-heading history-heading"><div><span className="small-kicker">YOUR RECORD</span><h2>Shift history</h2></div><div className="history-actions"><button className="secondary-btn" onClick={() => openEdit()}><Plus size={17}/> Add manually</button><div className="export-wrap"><button className="primary-outline" disabled={!shifts.length || creatingSheet} onClick={() => setExportOpen(!exportOpen)}><ArrowDownToLine size={17}/> {creatingSheet ? "Creating…" : "Export"} <ChevronDown size={15}/></button>{exportOpen && <div className="export-menu"><button onClick={() => exportGoogleSheet()}><FileSpreadsheet size={18}/><span><strong>Create Google Sheet</strong><small>Save hours directly to your Drive</small></span></button><button onClick={() => { setShareRetryId(""); setShareError(""); setShareOpen(true); setExportOpen(false); }}><Mail size={18}/><span><strong>Create & email Google Sheet</strong><small>Share a new hours Sheet with someone</small></span></button><button onClick={() => exportCsv(false)}><FileSpreadsheet size={18}/><span><strong>Download hours CSV</strong><small>Import into Google Sheets anytime</small></span></button><button onClick={() => exportCsv(true)}><FileSpreadsheet size={18}/><span><strong>Detailed log CSV</strong><small>Includes notes and AI summaries</small></span></button><button onClick={() => { download("routehours-backup.json", JSON.stringify({ shifts, active }, null, 2), "application/json"); setExportOpen(false); }}><ArrowDownToLine size={18}/><span><strong>Backup data</strong><small>Save a copy you can restore later</small></span></button></div>}</div></div></div>
+        <div className="history-toolbar"><div className="history-filters" role="group" aria-label="Filter shifts">{([ ["all", "All shifts"], ["week", "This week"], ["month", "This month"] ] as const).map(([value, label]) => <button key={value} className={historyRange === value ? "selected" : ""} aria-pressed={historyRange === value} onClick={() => setHistoryRange(value)}>{label}</button>)}</div><label className="history-search"><Search size={16}/><input value={historyQuery} onChange={e => setHistoryQuery(e.target.value)} placeholder="Search dates or notes" aria-label="Search shifts"/></label></div>
+        {shifts.length > 0 && <p className="history-count">Showing {filteredShifts.length} of {shifts.length} shifts · Export includes all saved shifts.</p>}
+        {sorted.length === 0 ? <div className="empty-state"><div className="empty-illustration"><Clock3 size={32}/></div><h3>Your shifts will show up here</h3><p>Start the timer for your next bus ride, or add a past shift manually.</p></div> : filteredShifts.length === 0 ? <div className="empty-state filter-empty"><div className="empty-illustration"><Search size={29}/></div><h3>No matching shifts</h3><p>Try another date range or search term.</p><button onClick={() => { setHistoryRange("all"); setHistoryQuery(""); }}>Clear filters</button></div> : <div className="shift-list">{filteredShifts.map(shift => { const open = expanded === shift.id; return <div className={`shift-item ${open ? "expanded" : ""}`} key={shift.id}><button className="shift-summary" onClick={() => setExpanded(open ? null : shift.id)} aria-expanded={open}><span className="shift-date-icon"><CalendarDays size={18}/></span><span className="shift-main"><strong>{formatDay(shift.start)}</strong><small>{formatTime(shift.start)} <ArrowRight size={13}/> {formatTime(shift.end)}</small></span><span className="shift-duration">{durationLabel(minutesBetween(shift.start, shift.end))}</span><ChevronDown className="shift-chevron" size={18}/></button>{open && <div className="shift-detail"><div className="detail-grid"><div><span className="detail-label">STARTED</span><strong>{new Date(shift.start).toLocaleString("en-GB")}</strong></div><div><span className="detail-label">FINISHED</span><strong>{new Date(shift.end).toLocaleString("en-GB")}</strong></div><div><span className="detail-label">DECIMAL HOURS</span><strong>{(minutesBetween(shift.start, shift.end) / 60).toFixed(2)} h</strong></div></div><div className="detail-notes"><span className="detail-label">YOUR NOTES</span>{shift.notes.length ? shift.notes.map((note, i) => <p key={i}>• {note}</p>) : <p className="muted">No notes recorded.</p>}</div>{shift.summaryStatus === "pending" && <div className="ai-panel"><Sparkles size={18}/><span>Creating your summary…</span><span className="mini-spinner"/></div>}{shift.summary && <div className="summary-panel"><div className="summary-title"><Sparkles size={17}/> AI SHIFT SUMMARY</div><p>{shift.summary.overview}</p>{([ ["Activities", shift.summary.activities], ["Notable moments", shift.summary.notable], ["Follow-up", shift.summary.followUp] ] as const).map(([title, values]) => values.length > 0 && <div className="summary-group" key={title}><strong>{title}</strong><ul>{values.map((value, i) => <li key={i}>{value}</li>)}</ul></div>)}</div>}{shift.summaryStatus === "error" && shift.summaryError && <p className="summary-error" role="alert">{shift.summaryError}</p>}{(!shift.summary || shift.summaryStatus === "error") && <button className="text-action" onClick={() => retrySummary(shift)}><Sparkles size={16}/>{shift.summaryStatus === "error" ? "Retry AI summary" : "Generate AI summary"}</button>}<div className="shift-controls"><button onClick={() => void copyShiftHours(shift)}><Clipboard size={15}/> Copy hours</button><button onClick={() => openEdit(shift)}><Pencil size={15}/> Edit shift</button><button className="danger" onClick={() => deleteShift(shift.id)}><Trash2 size={15}/> Delete</button></div></div>}</div>; })}</div>}
       </section>
       {sheetUrl && <div className="sheet-success"><FileSpreadsheet size={20}/><span>{sheetShareStatus || "Your Google Sheet is ready."}</span><a href={sheetUrl} target="_blank" rel="noopener noreferrer">Open Google Sheet <ArrowRight size={15}/></a></div>}
       <footer className="footer"><div><span className="brand-mini">RH</span> RouteHours</div><span>Shift records stay in this browser; AI and exports send selected data when used.</span></footer>
     </main>
+
+    <nav className="mobile-dock" aria-label="Quick navigation"><a href="#timer"><Clock3 size={19}/><span>Timer</span></a><a href="#voice"><Mic size={19}/><span>Voice</span></a><a href="#history"><History size={19}/><span>History</span></a></nav>
 
     {notice && <div className="toast" role="status"><Info size={17}/><span>{notice}</span><button aria-label="Dismiss notification" onClick={() => setNotice("")}><X size={15}/></button></div>}
 
@@ -565,6 +616,7 @@ export default function Home() {
 
     {settingsOpen && <div className="modal-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) setSettingsOpen(false); }}><div className="modal settings-modal" role="dialog" aria-modal="true" aria-label="Settings">
       <div className="modal-head"><div><span className="small-kicker">PREFERENCES</span><h2>Settings</h2></div><button className="icon-btn" aria-label="Close" onClick={() => setSettingsOpen(false)}><X size={19}/></button></div>
+      <div className="setting-block appearance-settings"><div className="setting-title"><span className="setting-icon"><Moon size={19}/></span><div><strong>Appearance</strong><p>Pick the look that works best for you.</p></div></div><div className="theme-options" role="group" aria-label="Appearance">{([ ["system", "System"], ["light", "Light"], ["dark", "Dark"] ] as const).map(([value, label]) => <button key={value} className={themeMode === value ? "selected" : ""} aria-pressed={themeMode === value} onClick={() => { setThemeMode(value); setSettingsSaved(false); }}>{value === "dark" ? <Moon size={15}/> : value === "light" ? <Sun size={15}/> : <Settings2 size={15}/>} {label}</button>)}</div><label className="goal-setting">Weekly hours goal <small>Optional. Only logged shifts count toward it.</small><div><input type="number" min="0" max="80" step="0.5" value={weeklyGoalHours || ""} onChange={e => { setWeeklyGoalHours(Math.max(0, Math.min(80, Number(e.target.value) || 0))); setSettingsSaved(false); }} placeholder="No goal"/><span>hours</span></div></label></div>
       <div className="setting-block">
         <div className="setting-title"><span className="setting-icon"><Sparkles size={19}/></span><div><strong>Automatic AI summaries</strong><p>Organize your notes when you stop a shift.</p></div><button className={`toggle ${aiEnabled ? "on" : ""}`} role="switch" aria-checked={aiEnabled} aria-label="Automatic AI summaries" onClick={() => { setAiEnabled(!aiEnabled); setSettingsSaved(false); }}><span/></button></div>
         <label className="access-label">Gemini API key <small>Get yours from <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">Google AI Studio</a>.</small><input type="password" value={geminiApiKey} onChange={e => { setGeminiApiKey(e.target.value); setAiEnabled(false); setAiConnection(null); setSettingsSaved(false); }} placeholder="Paste your Gemini API key" autoComplete="off" spellCheck={false}/></label>
