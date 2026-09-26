@@ -12,6 +12,7 @@ export type Shift = {
   notes: string[];
   summary?: Summary;
   summaryStatus?: "pending" | "done" | "error";
+  summaryError?: string;
 };
 
 export type ActiveShift = { start: string; notes: string[] };
