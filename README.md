@@ -11,7 +11,7 @@ A personal web app for tracking bus shifts. Start the timer when you board, stop
 - Automatic sectioned Gemini summary when AI is connected. Settings lets you enter and test your own Gemini API key; a failed summary does not lose the shift and can be retried.
 - Create an actual Google Sheet in your Drive and optionally share it with a recipient by email, or download an hours CSV for Google Sheets. A separate detailed CSV includes notes and summaries.
 - Ask RouteHours uses Gemini and an app-specific guide to explain controls and suggest note structure. It receives the current shift count and totals; when the question concerns notes, it also receives the active note draft. It cannot change records or see Google account settings.
-- JSON backup and restore. Data and unfinished note drafts are stored in this browser's local storage, with no account or cross-device sync. Backups contain shifts and an active timer, but not settings or credentials.
+- JSON backup and restore. Data and unfinished note drafts are stored in this browser's local storage, with no account or cross-device sync. Backups contain shifts, an active timer, payroll details and daily absence/remarks entries, but not provider settings or credentials.
 
 ## Run locally
 
@@ -49,8 +49,18 @@ Audio is processed transiently and is not stored in RouteHours or included in ba
 1. In Google Cloud, enable the Google Sheets API **and Google Drive API**, configure the OAuth consent screen, and create a **Web application** OAuth client ID. Google's [setup guide](https://developers.google.com/identity/oauth2/web/guides/get-google-api-clientid) explains the steps.
 2. Add the app origin shown in RouteHours Settings under **Authorized JavaScript origins**. For local use, add both `http://localhost` and `http://localhost:3000` as required by Google's guide. Add your Google account as a test user if the OAuth app is still in testing.
 3. In RouteHours **Settings**, paste the OAuth client ID under **Google Sheets export**, then tap **Save Google client ID**. The field also accepts downloaded Web client JSON. A confirmation appears when it is saved in this browser. This is a public ID, not the client secret. No redeploy is needed. You can still use `NEXT_PUBLIC_GOOGLE_CLIENT_ID` on the host as a fallback.
-4. In Export, choose **Create Google Sheet** and grant the requested `drive.file` access. The app creates one new spreadsheet with dates, start/end times, exact minutes, decimal hours, and a total row. Notes stay out of the direct Sheets export.
-5. To share it, choose **Create & email Google Sheet**, enter the recipient's email address, choose Viewer or Editor, and confirm. Google Drive grants access to the new Sheet and sends a notification email. If sharing fails after creation, the app keeps the new Sheet link and offers a retry for that same file.
+4. Tap **Review & export**, select the week, review the preview and remarks, then choose **Save to Google Sheets**. Grant the requested `drive.file` access. The new spreadsheet contains the reviewed Danish weekly timesheet, including name, payroll number, absence entries and optional notes/AI summaries.
+5. To share it, choose **Email Google Sheets link**, enter the recipient's email address, choose Viewer or Editor, and confirm. Google Drive grants access to the new Sheet and sends a notification email. If sharing fails after creation, the app keeps the new Sheet link and offers a retry for that same file.
+
+## Weekly timesheet and email attachment
+
+Use **Review & export** to choose any Monday–Sunday week. Name, payroll number and employer email are editable here or in Settings. The preview follows the supplied timesheet structure: two rows per day (with extra rows when needed), start/end, Syg, Fri, SH, Andet, worked-time total and daily remarks. Open **Absence & extra remarks** to enter the employer's marks or hours. These fields are not counted as worked time; SH is left undefined. Only completed shifts are included, with overnight shifts split at local midnight and elapsed minutes preserved through daylight-saving changes.
+
+Shift notes and all existing AI summary sections are included by default, with a checkbox to exclude them. Review the remarks, then tap **Prepare Excel file → Share file** and select an email app on a supported phone. Complete sending in that app. Alternatively, **Download** the file and **Open email draft**; the draft includes recipient, subject and message but cannot attach the file automatically. Excel export needs no Google OAuth setup. Very long remarks continue in an additional worksheet so they remain readable.
+
+The microphone is next to the relevant text input: questions or shift notes. Question dictation fills the field for review before Send; explicit timer commands require confirmation. Groq uses a live audio-level waveform, while browser speech recognition shows a listening animation. Motion's plain JavaScript mini API animates entrance and modal transitions with reduced-motion support. No standalone microphone tile remains.
+
+Backups include payroll details and daily absence/remarks entries, alongside shifts and the active timer. Provider keys and OAuth IDs remain excluded. Older backups remain compatible.
 
 Google may require additional OAuth verification for use beyond your own test account. If you have not configured OAuth, use **Download hours CSV** and import the file into Google Sheets.
 
