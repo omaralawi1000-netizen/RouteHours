@@ -1,4 +1,4 @@
-const CACHE = "routehours-shell-v4";
+const CACHE = "routehours-shell-v5";
 const SHELL = ["/", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", event => {

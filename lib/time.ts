@@ -1,3 +1,4 @@
+import { dateInZone, DEFAULT_ZONE } from "./ledger.ts";
 export type Summary = {
   overview: string;
   activities: string[];
@@ -44,14 +45,14 @@ export function csvCell(value: string | number): string {
   return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }
 
-export function shiftsCsv(shifts: Shift[], detailed = false): string {
+export function shiftsCsv(shifts: Shift[], detailed = false, zone = DEFAULT_ZONE): string {
   const header = ["Date", "Start", "End", "Minutes", "Decimal hours", ...(detailed ? ["Notes", "AI overview", "Activities", "Notable", "Follow-up"] : [])];
   const lines = shifts.slice().sort((a, b) => a.start.localeCompare(b.start)).map((shift) => {
     const minutes = minutesBetween(shift.start, shift.end);
     const cells: (string | number)[] = [
-      localDateKey(shift.start),
-      new Date(shift.start).toLocaleString("en-GB"),
-      new Date(shift.end).toLocaleString("en-GB"),
+      dateInZone(shift.start, zone),
+      new Date(shift.start).toLocaleString("en-GB", { timeZone: zone }),
+      new Date(shift.end).toLocaleString("en-GB", { timeZone: zone }),
       minutes,
       (minutes / 60).toFixed(4),
     ];

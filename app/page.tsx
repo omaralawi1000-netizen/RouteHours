@@ -3,6 +3,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { animate } from "motion/mini";
 import WeeklyExport from "./weekly-export";
+import WeekView from "./week-view";
+import VoiceReview from "./voice-review";
+import { dateInZone, timeInZone, zonedInstant, mondayOf, addDays, periodMinutes, shiftWarnings, DEFAULT_ZONE } from "@/lib/ledger";
+import { loadState, saveState, stateSignature, decodeSubmissions, validateBackup, allSubmissions, saveSubmission, type Submission } from "@/lib/storage";
+import { isTimeRequest } from "@/lib/voice-plan";
+import { gmailToken } from "@/lib/gmail";
 import { type PayrollProfile, type DayDetails, type WeeklyReport } from "@/lib/timesheet";
 import { Activity, ArrowDownToLine, ArrowRight, CalendarDays, Check, ChevronDown, Clipboard, Clock3, Download, FileSpreadsheet, History, Info, LockKeyhole, Mail, MessageCircle, Mic, MicOff, Moon, Pause, Pencil, Play, Plus, RotateCcw, Search, Send, Settings2, ShieldCheck, Sparkles, Sun, Trash2, X } from "lucide-react";
 import { durationLabel, localDateKey, minutesBetween, shiftsCsv, thisWeekStart, type ActiveShift, type Shift } from "@/lib/time";
@@ -19,12 +25,14 @@ type InstallPrompt = Event & { prompt: () => Promise<void>; userChoice: Promise<
 type DictationLanguage = "auto" | "en" | "da" | "ar";
 type ThemeMode = "system" | "light" | "dark";
 type HistoryRange = "all" | "week" | "month";
-type StoredData = { shifts: Shift[]; active: ActiveShift | null; noteDraft: string; aiEnabled: boolean; accessCode: string; geminiApiKey: string; groqApiKey: string; dictationLanguage: DictationLanguage; googleClientId: string; themeMode: ThemeMode; weeklyGoalHours: number; payroll: PayrollProfile; dayDetails: DayDetails };
+type StoredData = { workZone: string; shifts: Shift[]; active: ActiveShift | null; noteDraft: string; aiEnabled: boolean; accessCode: string; geminiApiKey: string; groqApiKey: string; dictationLanguage: DictationLanguage; googleClientId: string; themeMode: ThemeMode; weeklyGoalHours: number; payroll: PayrollProfile; dayDetails: DayDetails };
 
-function readStored(): StoredData {
+function readStored(input?: unknown): StoredData {
   try {
-    const value = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+    const value = input === undefined ? JSON.parse(localStorage.getItem(STORAGE_KEY) || "null") : input;
+    if (value) validateBackup(value);
     return {
+      workZone: typeof value?.workZone === "string" ? value.workZone : DEFAULT_ZONE,
       shifts: Array.isArray(value?.shifts) ? value.shifts.filter((s: Shift) => s && s.id && s.start && s.end) : [],
       active: value?.active?.start ? value.active : null,
       noteDraft: value?.active?.start && typeof value?.noteDraft === "string" ? value.noteDraft.slice(0, 2000) : "",
@@ -39,20 +47,14 @@ function readStored(): StoredData {
       payroll: { name: typeof value?.payroll?.name === "string" ? value.payroll.name : "", number: typeof value?.payroll?.number === "string" ? value.payroll.number : "", email: typeof value?.payroll?.email === "string" ? value.payroll.email : "" },
       dayDetails: value?.dayDetails && typeof value.dayDetails === "object" && !Array.isArray(value.dayDetails) ? value.dayDetails : {},
     };
-  } catch { return { shifts: [], active: null, noteDraft: "", aiEnabled: false, accessCode: "", geminiApiKey: "", groqApiKey: "", dictationLanguage: "auto", googleClientId: "", themeMode: "system", weeklyGoalHours: 0, payroll: { name: "", number: "", email: "" }, dayDetails: {} }; }
+  } catch { throw new Error("Your saved data could not be read. It has been preserved. Export the original data below before restoring a valid backup."); }
 }
 
-function formatTime(value: string) { return new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit" }).format(new Date(value)); }
-function formatDay(value: string) { return new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short" }).format(new Date(value)); }
 function clock(seconds: number) {
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
   const s = seconds % 60;
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-}
-function localInput(value: string) {
-  const date = new Date(value);
-  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 }
 function emptyShift(): Shift {
   const end = new Date();
@@ -64,7 +66,7 @@ function download(name: string, content: string, type: string) {
   const link = document.createElement("a");
   link.href = url;
   link.download = name;
-  link.click();
+  document.body.appendChild(link); link.click(); link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
@@ -84,6 +86,22 @@ function cleanNoteDraft(value: string) { return value.split("\n").map(line => li
 
 export default function Home() {
   const [loaded, setLoaded] = useState(false);
+  const [workZone, setWorkZone] = useState(DEFAULT_ZONE);
+  const [selectedWeek, setSelectedWeek] = useState(mondayOf(dateInZone(Date.now())));
+  const [saveStatus, setSaveStatus] = useState("Loading your records…");
+  const [storageError, setStorageError] = useState("");
+  const [bootError, setBootError] = useState("");
+  const lastEnqueued = useRef("");
+  const revision = useRef(0), saveQueue = useRef<Promise<void>>(Promise.resolve()), storageBlocked = useRef(false), saveSequence = useRef(0);
+  const [lastSavedShift, setLastSavedShift] = useState<Shift | null>(null);
+  const [voicePlanText, setVoicePlanText] = useState<string | null>(null);
+  const [restorePreview, setRestorePreview] = useState<ReturnType<typeof parseBackup> | null>(null);
+  const [lastBackup, setLastBackup] = useState("");
+  const [googleAccount, setGoogleAccount] = useState(""), [googleConnecting, setGoogleConnecting] = useState(false), [googleError, setGoogleError] = useState("");
+  const [timerCheckedAt, setTimerCheckedAt] = useState(0);
+  function formatTime(value: string) { return timeInZone(value, workZone); }
+  function formatDay(value: string) { return new Intl.DateTimeFormat("en-GB", { timeZone: workZone, weekday: "short", day: "numeric", month: "short" }).format(new Date(value)); }
+  function localInput(value: string) { return dateInZone(value, workZone) + "T" + timeInZone(value, workZone); }
   const [view, setView] = useState<"today" | "history">("today");
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [active, setActive] = useState<ActiveShift | null>(null);
@@ -160,13 +178,41 @@ export default function Home() {
   const [voiceAction, setVoiceAction] = useState<VoiceAction | null>(null);
 
   useEffect(() => { activeRef.current = active; }, [active]);
+  useEffect(() => { if (!notice) return; const timer = window.setTimeout(() => setNotice(""), 6000); return () => window.clearTimeout(timer); }, [notice]);
+  useEffect(() => {
+    if (weeklyExportOpen && !settingsOpen && !restorePreview && !storageError) return; // WeeklyExport manages its own focus.
+    const dialogs = Array.from(document.querySelectorAll<HTMLElement>(".modal-backdrop"));
+    const backdrop = dialogs.at(-1), dialog = backdrop?.querySelector<HTMLElement>(".modal");
+    if (!dialog) return;
+    const previous = document.activeElement as HTMLElement | null, overflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden"; dialog.tabIndex = -1;
+    const inert = [...Array.from(document.querySelectorAll<HTMLElement>(".topbar,.main-grid,.mobile-dock")), ...dialogs.slice(0,-1)]; inert.forEach(el => el.inert = true);
+    dialog.focus();
+    function keys(event: KeyboardEvent) {
+      if (event.key === "Escape" && !storageError && !creatingSheet) { if (restorePreview) setRestorePreview(null); else if (voicePlanText !== null) setVoicePlanText(null); else if (installOpen) setInstallOpen(false); else if (settingsOpen) setSettingsOpen(false); else if (shareOpen) setShareOpen(false); else setEditing(null); }
+      if (event.key !== "Tab") return;
+      const items = Array.from(dialog!.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),textarea:not(:disabled),select:not(:disabled),summary,a[href]')).filter(el => el.getClientRects().length);
+      const first = items[0], last = items.at(-1); if (!first || !last) {event.preventDefault();return;}
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog)) {event.preventDefault();last.focus();}
+      else if (!event.shiftKey && (document.activeElement === last || document.activeElement === dialog)) {event.preventDefault();first.focus();}
+    }
+    document.addEventListener("keydown",keys);
+    return () => {document.body.style.overflow=overflow;inert.forEach(el => el.inert=false);document.removeEventListener("keydown",keys);if(previous?.isConnected)previous.focus();};
+  }, [editing?.id,settingsOpen,shareOpen,weeklyExportOpen,installOpen,voicePlanText !== null,restorePreview !== null,storageError,creatingSheet]);
+
 
   useEffect(() => {
-    const saved = readStored();
-    setShifts(saved.shifts); setActive(saved.active); setNoteInput(saved.noteDraft); setAiEnabled(saved.aiEnabled); setAccessCode(saved.accessCode); setGeminiApiKey(saved.geminiApiKey); setGroqApiKey(saved.groqApiKey); setDictationLanguage(saved.dictationLanguage); setGoogleClientId(saved.googleClientId); setThemeMode(saved.themeMode); setWeeklyGoalHours(saved.weeklyGoalHours); setPayroll(saved.payroll); setDayDetails(saved.dayDetails); setLoaded(true);
+    let cancelled = false;
+    void loadState<StoredData>().then(({ data, revision: rev }) => {
+      if (cancelled) return;
+      if (!data && JSON.parse(localStorage.getItem(STORAGE_KEY) || "null")?.storageVersion === 2) throw new Error("The device database is missing. Restore an external backup; your settings have been preserved.");
+      const saved = readStored(data || undefined); revision.current = rev; if(data) { lastEnqueued.current = stateSignature(saved); setSaveStatus("Saved on this device"); }
+      setShifts(saved.shifts); setActive(saved.active); setNoteInput(saved.noteDraft); setAiEnabled(saved.aiEnabled); setAccessCode(saved.accessCode); setGeminiApiKey(saved.geminiApiKey); setGroqApiKey(saved.groqApiKey); setDictationLanguage(saved.dictationLanguage); setGoogleClientId(saved.googleClientId); setThemeMode(saved.themeMode); setWeeklyGoalHours(saved.weeklyGoalHours); setPayroll(saved.payroll); setDayDetails(saved.dayDetails); setWorkZone(saved.workZone); setSelectedWeek(mondayOf(dateInZone(Date.now(), saved.workZone))); setLastBackup(localStorage.getItem("routehours:last-backup") || ""); setLoaded(true);
+    }).catch(e => { if (!cancelled) setBootError(e.message); });
     setInstalled(window.matchMedia("(display-mode: standalone)").matches || Boolean((navigator as Navigator & { standalone?: boolean }).standalone));
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => {
+      cancelled = true;
       window.clearInterval(timer);
       recordingCancelled.current = true;
       if (recorder.current?.state === "recording") recorder.current.stop();
@@ -213,11 +259,33 @@ export default function Home() {
     return () => { window.removeEventListener("beforeinstallprompt", onPrompt); window.removeEventListener("appinstalled", onInstalled); };
   }, []);
 
+  function snapshot(): StoredData { return { shifts, active, noteDraft: noteInput, aiEnabled, accessCode, geminiApiKey, groqApiKey, dictationLanguage, googleClientId, themeMode, weeklyGoalHours, payroll, dayDetails, workZone }; }
+  function persist(data: StoredData, receipts: Submission[] = []) {
+    lastEnqueued.current = stateSignature(data);
+    const sequence = ++saveSequence.current;
+    setSaveStatus("Saving…");
+    const operation = saveQueue.current.then(async () => {
+      if (storageBlocked.current) throw new Error("Saving is paused. Back up this screen and reload.");
+      revision.current = await saveState(data, revision.current, receipts);
+      if(receipts.length) window.dispatchEvent(new Event("routehours:submissions"));
+      // Keep a small theme/settings hint. The database is authoritative; legacy data is untouched until migration succeeds.
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ storageVersion: 2, themeMode: data.themeMode })); } catch { /* Records are already saved transactionally. */ }
+      if (sequence === saveSequence.current) setSaveStatus("Saved on this device");
+    });
+    saveQueue.current = operation.catch(error => { storageBlocked.current = true; setSaveStatus("Not saved"); setStorageError(error.message); });
+    return operation;
+  }
   useEffect(() => {
     if (!loaded) return;
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ shifts, active, noteDraft: noteInput, aiEnabled, accessCode, geminiApiKey, groqApiKey, dictationLanguage, googleClientId, themeMode, weeklyGoalHours, payroll, dayDetails })); }
-    catch { setNotice("Browser storage is unavailable. Export your hours before closing this page."); }
-  }, [loaded, shifts, active, noteInput, aiEnabled, accessCode, geminiApiKey, groqApiKey, dictationLanguage, googleClientId, themeMode, weeklyGoalHours, payroll, dayDetails]);
+    const data = snapshot(); if (lastEnqueued.current === stateSignature(data)) return;
+    void persist(data).catch(() => {});
+  }, [loaded, shifts, active, noteInput, aiEnabled, accessCode, geminiApiKey, groqApiKey, dictationLanguage, googleClientId, themeMode, weeklyGoalHours, payroll, dayDetails, workZone]);
+  useEffect(() => {
+    if (!loaded) return;
+    const check = () => { void loadState<StoredData>().then(latest => { if (latest.revision > revision.current && document.visibilityState === "visible") { storageBlocked.current = true; setStorageError("Another tab changed your records. Back up any unsaved changes, then reload to continue with the latest version."); } }).catch(() => {}); };
+    const timer = window.setInterval(check, 5000); window.addEventListener("focus", check);
+    return () => { window.clearInterval(timer); window.removeEventListener("focus", check); };
+  }, [loaded]);
 
   useEffect(() => {
     if (!loaded || !aiEnabled || !(geminiApiKey || accessCode)) return;
@@ -241,33 +309,25 @@ export default function Home() {
   }, [loaded, aiEnabled, accessCode, geminiApiKey, shifts]);
 
   const sorted = useMemo(() => shifts.slice().sort((a, b) => b.start.localeCompare(a.start)), [shifts]);
-  const weekStart = thisWeekStart(new Date(now)).getTime();
-  const nextWeek = thisWeekStart(new Date(now)); nextWeek.setDate(nextWeek.getDate() + 7);
-  const weekEnd = nextWeek.getTime();
-  const weekShifts = shifts.filter(s => new Date(s.start).getTime() >= weekStart && new Date(s.start).getTime() < weekEnd);
-  const weekMinutes = weekShifts.reduce((sum, s) => sum + minutesBetween(s.start, s.end), 0);
-  const monthKey = localDateKey(new Date(now).toISOString()).slice(0, 7);
-  const monthMinutes = shifts.filter(s => localDateKey(s.start).startsWith(monthKey)).reduce((sum, s) => sum + minutesBetween(s.start, s.end), 0);
-  const goalMinutes = weeklyGoalHours * 60;
-  const goalPercent = goalMinutes > 0 ? Math.min(100, Math.round(weekMinutes / goalMinutes * 100)) : 0;
+  const todayKey = dateInZone(now, workZone), currentMonday = mondayOf(todayKey);
+  const weekStart = Date.parse(zonedInstant(currentMonday + "T00:00", workZone)), weekEnd = Date.parse(zonedInstant(addDays(currentMonday,7) + "T00:00", workZone));
+  const weekShifts = shifts.filter(s => Date.parse(s.start) < weekEnd && Date.parse(s.end) > weekStart);
+  const weekMinutes = useMemo(() => periodMinutes(shifts, currentMonday, addDays(currentMonday,7), workZone), [shifts,currentMonday,workZone]);
+  const monthKey = todayKey.slice(0,7), monthStart = monthKey + "-01";
+  const nextMonth = new Date(monthStart + "T12:00Z"); nextMonth.setUTCMonth(nextMonth.getUTCMonth()+1);
+  const monthMinutes = useMemo(() => periodMinutes(shifts, monthStart, nextMonth.toISOString().slice(0,10), workZone), [shifts,monthStart,workZone]);
   const filteredShifts = useMemo(() => sorted.filter(shift => {
-    if (historyRange === "week" && (new Date(shift.start).getTime() < weekStart || new Date(shift.start).getTime() >= weekEnd)) return false;
-    if (historyRange === "month" && !localDateKey(shift.start).startsWith(monthKey)) return false;
+    if (historyRange === "week" && (Date.parse(shift.start) >= weekEnd || Date.parse(shift.end) <= weekStart)) return false;
+    if (historyRange === "month" && !(dateInZone(shift.start,workZone) < nextMonth.toISOString().slice(0,10) && dateInZone(shift.end,workZone) >= monthStart)) return false;
     const query = historyQuery.trim().toLocaleLowerCase();
-    return !query || [formatDay(shift.start), localDateKey(shift.start), ...shift.notes, shift.summary?.overview || ""].join(" ").toLocaleLowerCase().includes(query);
-  }), [sorted, historyRange, historyQuery, weekStart, weekEnd, monthKey]);
-  const activeSeconds = active ? Math.max(0, Math.floor((now - new Date(active.start).getTime()) / 1000)) : 0;
-  const weekDays = Array.from({ length: 7 }, (_, i) => {
-    const date = new Date(thisWeekStart(new Date(now)));
-    date.setDate(date.getDate() + i);
-    const minutes = shifts.filter(s => localDateKey(s.start) === localDateKey(date.toISOString())).reduce((sum, s) => sum + minutesBetween(s.start, s.end), 0);
-    return { label: ["M", "T", "W", "T", "F", "S", "S"][i], minutes, today: localDateKey(date.toISOString()) === localDateKey(new Date(now).toISOString()) };
-  });
-  const maxDaily = Math.max(180, ...weekDays.map(d => d.minutes));
+    return !query || [formatDay(shift.start), dateInZone(shift.start,workZone), ...shift.notes, shift.summary?.overview || ""].join(" ").toLocaleLowerCase().includes(query);
+  }), [sorted, historyRange, historyQuery, weekStart, weekEnd, monthKey, workZone]);
+  const activeSeconds = active ? Math.max(0, Math.floor((now - Date.parse(active.start)) / 1000)) : 0;
   const isDarkTheme = themeMode === "dark" || themeMode === "system" && prefersDark;
 
   function startShift() {
-    setActive({ start: new Date().toISOString(), notes: [] });
+    if (active || storageBlocked.current) return;
+    setLastSavedShift(null); setActive({ start: new Date().toISOString(), notes: [] });
     setNoteInput("");
     setNotice("Shift started. Your timer will keep its place if you close this tab.");
   }
@@ -278,9 +338,9 @@ export default function Home() {
     const notes = draft ? [...active.notes, draft] : active.notes;
     const willSummarize = aiEnabled && Boolean(geminiApiKey || accessCode);
     const shift: Shift = { id: crypto.randomUUID(), start: active.start, end, notes, summaryStatus: willSummarize ? "pending" : undefined };
-    setShifts(current => [shift, ...current]);
+    setShifts(current => [shift, ...current]); setLastSavedShift(shift);
     setActive(null); setNoteInput(""); setExpanded(shift.id);
-    setNotice(willSummarize ? "Shift saved. Gemini is preparing your summary below." : "Shift saved. Connect Gemini in Settings to create an AI summary.");
+    setNotice(willSummarize ? "Shift recorded. Your summary is being prepared." : "Shift recorded.");
   }
   function addNote() {
     const note = cleanNoteDraft(noteInput);
@@ -294,13 +354,14 @@ export default function Home() {
   }
   async function copyShiftHours(shift: Shift) {
     const minutes = minutesBetween(shift.start, shift.end);
-    const text = `RouteHours · ${formatDay(shift.start)}\nStart: ${new Date(shift.start).toLocaleString("en-GB")}\nEnd: ${new Date(shift.end).toLocaleString("en-GB")}\nHours: ${durationLabel(minutes)} (${(minutes / 60).toFixed(2)} decimal hours)`;
+    const text = `RouteHours · ${formatDay(shift.start)}\nStart: ${new Date(shift.start).toLocaleString("en-GB", { timeZone: workZone })}\nEnd: ${new Date(shift.end).toLocaleString("en-GB", { timeZone: workZone })}\nHours: ${durationLabel(minutes)} (${(minutes / 60).toFixed(2)} decimal hours)`;
     try { await navigator.clipboard.writeText(text); setNotice("Shift hours copied. You can paste them into a message."); }
     catch { setNotice("Clipboard unavailable. You can still use Export → Download hours CSV."); }
   }
   function handleVoiceTranscript(transcript: string) {
     const heard = transcript.trim();
     if (!heard) { setNotice("No speech was heard. Tap the microphone and try again."); return; }
+    if (isTimeRequest(heard)) { setVoicePlanText(heard); return; }
     const intent = interpretVoice(heard);
     if (intent.kind === "start" || intent.kind === "stop") setVoiceAction({ kind: intent.kind, transcript: heard });
     else if (intent.kind === "help") {
@@ -327,6 +388,7 @@ export default function Home() {
     voiceTarget.current = "general";
     const heard = transcript.trim();
     if (!heard) { setNotice("No speech was heard. Tap the mic and try again."); return; }
+    if (isTimeRequest(heard)) { setVoicePlanText(heard); return; }
     const intent = interpretVoice(heard);
     if (intent.kind === "start" || intent.kind === "stop" || intent.kind === "logHours" || /^(add|take|write)( a)? note\b/i.test(heard)) { handleVoiceTranscript(heard); return; }
     setAssistantQuestion(heard.slice(0, 1200));
@@ -507,10 +569,14 @@ export default function Home() {
   }
   function saveEdit() {
     if (!editing) return;
-    const start = new Date(editStart); const end = new Date(editEnd);
+    let start: Date, end: Date;
+    try { start = new Date(editStart === localInput(editing.start) ? editing.start : zonedInstant(editStart, workZone, true)); end = new Date(editEnd === localInput(editing.end) ? editing.end : zonedInstant(editEnd, workZone, true)); } catch(e) { setModalError((e as Error).message); return; }
     if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start) { setModalError("End time must be later than start time."); return; }
     const updated: Shift = { ...editing, start: start.toISOString(), end: end.toISOString(), notes: editNotes.split("\n").map(s => s.trim()).filter(Boolean), summary: undefined, summaryStatus: undefined, summaryError: undefined };
+    const warnings = shiftWarnings([...shifts.filter(s => s.id !== editing.id), updated]).filter(w => w.ids.includes(updated.id));
+    if (warnings.length && !window.confirm(warnings.map(w => w.message).join("\n") + "\nSave these times anyway?")) return;
     setShifts(current => current.some(s => s.id === editing.id) ? current.map(s => s.id === editing.id ? updated : s) : [updated, ...current]);
+    if (lastSavedShift?.id === updated.id) setLastSavedShift(updated);
     setEditing(null); setNotice("Shift saved. Generate the summary again if details changed.");
   }
   function retrySummary(shift: Shift) {
@@ -554,19 +620,16 @@ export default function Home() {
     } catch (error) { setAssistantError(error instanceof TypeError ? "Could not connect. Try again online." : error instanceof Error ? error.message : "Could not answer."); }
     finally { setAssistantBusy(false); }
   }
-  function saveSettings() {
+  async function saveSettings() {
     const normalizedId = normalizeClientId(googleClientId);
-    if (normalizedId && !validClientId(normalizedId)) { setSettingsSaved(false); setSettingsSaveError("This is not a Web application OAuth client ID. Paste the value ending in .apps.googleusercontent.com, or its downloaded JSON file contents."); return; }
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ shifts, active, noteDraft: noteInput, aiEnabled, accessCode, geminiApiKey, groqApiKey, dictationLanguage, googleClientId: normalizedId, themeMode, weeklyGoalHours, payroll, dayDetails }));
-      if (JSON.parse(localStorage.getItem(STORAGE_KEY) || "null")?.googleClientId !== normalizedId) throw new Error("Storage verification failed");
-      setGoogleClientId(normalizedId);
-      setSettingsSaved(true);
-      setSettingsSaveError("");
-    } catch {
-      setSettingsSaved(false);
-      setSettingsSaveError("Could not save on this device. Check that browser storage is allowed.");
-    }
+    if (normalizedId && !validClientId(normalizedId)) { setSettingsSaved(false); setSettingsSaveError("Paste a Web application client ID ending in .apps.googleusercontent.com, or its downloaded JSON."); return; }
+    try { await persist({ ...snapshot(), googleClientId: normalizedId }); setGoogleClientId(normalizedId); setSettingsSaved(true); setSettingsSaveError(""); }
+    catch (e) { setSettingsSaved(false); setSettingsSaveError((e as Error).message); }
+  }
+  async function connectGoogle() {
+    setGoogleConnecting(true); setGoogleError("");
+    try { const account = await gmailToken(normalizeClientId(googleClientId) || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || ""); setGoogleAccount(account.email); }
+    catch(e) { setGoogleError((e as Error).message); } finally { setGoogleConnecting(false); }
   }
   function toggleTheme() {
     setThemeMode(isDarkTheme ? "light" : "dark");
@@ -574,11 +637,11 @@ export default function Home() {
   }
   function deleteShift(id: string) {
     if (!window.confirm("Delete this shift? This cannot be undone unless you have a backup.")) return;
-    setShifts(current => current.filter(s => s.id !== id));
+    setShifts(current => current.filter(s => s.id !== id)); if (lastSavedShift?.id === id) setLastSavedShift(null);
   }
   function exportCsv(detailed: boolean) {
     if (!shifts.length) return;
-    download(`routehours-${monthKey}${detailed ? "-detailed" : "-hours"}.csv`, shiftsCsv(shifts, detailed), "text/csv;charset=utf-8");
+    download(`routehours-${monthKey}${detailed ? "-detailed" : "-hours"}.csv`, shiftsCsv(shifts, detailed, workZone), "text/csv;charset=utf-8");
     setExportOpen(false);
   }
   function exportGoogleSheet(share = false, report = shareReport) {
@@ -623,75 +686,87 @@ export default function Home() {
     if (choice.outcome === "accepted") setInstalled(true);
     installPrompt.current = null;
   }
+  function parseBackup(value: unknown) { validateBackup(value); decodeSubmissions(value.submissions); return value; }
+  async function exportBackup() {
+    try {
+      const submissions = await allSubmissions();
+      const serial = await Promise.all(submissions.map(async r => ({ ...r, attachment: await new Promise<string>((resolve,reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = reject; reader.readAsDataURL(r.attachment); }) })));
+      download("routehours-backup.json", JSON.stringify({ version: 2, shifts, active, noteDraft: noteInput, payroll, dayDetails, workZone, submissions: serial }, null, 2), "application/json");
+      const stamp = new Date().toISOString(); setLastBackup(stamp); localStorage.setItem("routehours:last-backup", stamp); setNotice("Backup downloaded. Keep this file somewhere outside this browser.");
+    } catch { download("routehours-emergency-backup.json", JSON.stringify({ shifts, active, noteDraft: noteInput, payroll, dayDetails, workZone },null,2), "application/json"); setNotice("Downloaded current shifts. Email records could not be included."); }
+  }
   async function importBackup(file: File | undefined) {
     if (!file) return;
-    try {
-      const data = JSON.parse(await file.text());
-      if (!Array.isArray(data.shifts) || data.shifts.some((s: Shift) => !s.id || !s.start || !s.end)) throw new Error("Invalid backup");
-      if (!window.confirm(`Replace your current history with ${data.shifts.length} shifts from this backup?`)) return;
-      setShifts(data.shifts); setActive(data.active?.start ? data.active : null);
-      if (data.payroll && typeof data.payroll.name === "string" && typeof data.payroll.number === "string" && typeof data.payroll.email === "string") setPayroll(data.payroll);
-      if (data.dayDetails && typeof data.dayDetails === "object" && !Array.isArray(data.dayDetails)) setDayDetails(data.dayDetails);
-      setNotice("Backup restored.");
-    } catch { setNotice("This file is not a valid RouteHours backup."); }
+    try { if (file.size > 30 * 1024 * 1024) throw new Error("Choose a backup smaller than 30 MB."); setRestorePreview(parseBackup(JSON.parse(await file.text()))); }
+    catch(e) { setNotice((e as Error).message); }
     if (importing.current) importing.current.value = "";
   }
+  async function applyRestore(merge: boolean) {
+    if (!restorePreview) return;
+    const data = restorePreview;
+    if (active && !merge && !window.confirm("A shift is running. Replacing will also replace this timer with the backup timer. Continue?")) return;
+    try {
+      const receipts = decodeSubmissions(data.submissions);
+      const combined = merge ? [...shifts, ...data.shifts.filter(s => !shifts.some(v => v.id === s.id || v.start === s.start && v.end === s.end))] : data.shifts;
+      const restored = { ...snapshot(), shifts: combined, active: merge ? active : data.active || null, noteDraft: merge ? noteInput : data.noteDraft || "", payroll: merge ? payroll : data.payroll || payroll, dayDetails: merge ? { ...data.dayDetails, ...dayDetails } : data.dayDetails || {}, workZone: merge ? workZone : data.workZone || workZone };
+      await persist(restored, receipts);
+      setShifts(restored.shifts); setActive(restored.active); setNoteInput(restored.noteDraft); setPayroll(restored.payroll); setDayDetails(restored.dayDetails); setWorkZone(restored.workZone); setRestorePreview(null); setNotice(merge ? "Backup merged. Existing shifts and timer were kept." : "Backup restored. Email history was preserved and merged.");
+    } catch(e) { setNotice((e as Error).message); }
+  }
+
+  if (bootError) return <main className="recovery-screen"><h1>Your data needs attention.</h1><p>{bootError}</p><button className="secondary-btn" onClick={async () => { const saved=await loadState().catch(() => null); download("routehours-original-data.json", saved?.data ? JSON.stringify(saved.data,null,2) : localStorage.getItem(STORAGE_KEY) || "{}", "application/json"); }}>Download original browser data</button><label>Restore a valid backup<input type="file" accept=".json" onChange={async e => { try { const f=e.target.files?.[0]; if (!f) return; const value=JSON.parse(await f.text()); validateBackup(value); const receipts=decodeSubmissions(value.submissions); if (!window.confirm("Use this backup to recover your records? Download the original first.")) return; const latest=await loadState(); await saveState(readStored(value),latest.revision,receipts); location.reload(); } catch(e) { setBootError((e as Error).message); } }}/></label></main>;
 
   if (!loaded) return <div className="loading-screen"><div className="loading-orb"/><span>RouteHours</span></div>;
 
   return <div className="app-shell">
-    <div className="ambient ambient-one"/><div className="ambient ambient-two"/>
+
     <header className="topbar container">
-      <div className="brand"><div className="brand-mark"><Activity size={22} strokeWidth={2.6}/></div><div><strong>RouteHours</strong><span>Bus shift tracker</span></div></div>
+      <div className="brand"><div className="brand-mark"><Activity size={22} strokeWidth={2.6}/></div><div><strong>RouteHours</strong><span>Your time, simply.</span></div></div>
       <div className="top-actions"><span className="today-pill"><CalendarDays size={15}/>{new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short" }).format(new Date(now))}</span>{!installed && <button className="install-top" onClick={() => void openInstall()}><Download size={16}/> Install</button>}<button className="icon-btn theme-button" aria-label={isDarkTheme ? "Switch to light mode" : "Switch to dark mode"} title={isDarkTheme ? "Switch to light mode" : "Switch to dark mode"} onClick={toggleTheme}>{isDarkTheme ? <Sun size={19}/> : <Moon size={19}/>}</button><button className="icon-btn" aria-label="Settings" onClick={() => setSettingsOpen(true)}><Settings2 size={19}/></button></div>
     </header>
 
-    <nav className="view-tabs container" aria-label="Main views"><button className={view === "today" ? "selected" : ""} aria-pressed={view === "today"} onClick={() => setView("today")}>Today</button><button className={view === "history" ? "selected" : ""} aria-pressed={view === "history"} onClick={() => setView("history")}>History</button></nav>
     <main className="container main-grid" data-view={view}>
-      <section className="hero"><div className="eyebrow"><span className="eyebrow-line"/> YOUR WORK, CLEARLY COUNTED</div><h1>Time well <em>kept.</em></h1><p>Your shift, your notes, your week. All in one place.</p><div className="hero-signals"><span><span className="signal-dot"/> {active ? "Shift in progress" : "Ready for your next shift"}</span><span><ShieldCheck size={15}/> Saved on this device</span></div></section>
-
-      <section id="timer" className={`timer-card ${active ? "is-active" : ""}`} aria-label="Shift timer">
-        <div className="timer-card-top"><span className="card-kicker"><span className="status-dot"/>{active ? "SHIFT IN PROGRESS" : "READY WHEN YOU ARE"}</span><Clock3 size={20}/></div>
-        <div className="timer-center"><span className="timer-caption">{active ? "Current shift" : "Your next shift"}</span><div className="timer-digits" aria-live="off">{active ? clock(activeSeconds) : "00:00:00"}</div><span className="timer-sub">{active ? `Started at ${formatTime(active.start)}` : "Tap start when you get on the bus"}</span></div>
-        <button className={`timer-button ${active ? "stop" : "start"}`} onClick={active ? stopShift : startShift}>{active ? <><Pause size={20} fill="currentColor"/> Stop & save shift</> : <><Play size={20} fill="currentColor"/> Start shift</>}</button>
-        <div className="timer-foot"><ShieldCheck size={15}/>Timer uses actual start and end times, even if you close the tab.</div>
-      </section>
-
-      <div className="stats-row" aria-label="Hours overview">
-        <div className="stat-card week-card"><span className="stat-icon mint"><Clock3 size={19}/></span><span className="stat-label">THIS WEEK</span><strong>{durationLabel(weekMinutes)}</strong><small>{weekShifts.length} {weekShifts.length === 1 ? "shift" : "shifts"} logged</small>{goalMinutes > 0 ? <div className="goal-progress"><div className="goal-track" role="progressbar" aria-label="Weekly goal progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={goalPercent}><span style={{ width: `${goalPercent}%` }}/></div><span>{goalPercent}% of {weeklyGoalHours}h goal</span></div> : <button className="goal-link" onClick={() => setSettingsOpen(true)}>Set a weekly goal <ArrowRight size={13}/></button>}</div>
-        <div className="stat-card"><span className="stat-icon peach"><CalendarDays size={19}/></span><span className="stat-label">THIS MONTH</span><strong>{durationLabel(monthMinutes)}</strong><small>{shifts.filter(s => localDateKey(s.start).startsWith(monthKey)).length} shifts logged</small></div>
-        <div className="stat-card chart-card"><div className="chart-head"><span className="stat-label">YOUR WEEK AT A GLANCE</span><span>Mon–Sun</span></div><div className="bar-chart">{weekDays.map((day, i) => <div className="bar-col" key={i} title={`${day.minutes} minutes`}><div className="bar-track"><div className={`bar-fill ${day.today ? "today" : ""}`} style={{ height: `${Math.max(day.minutes ? 8 : 3, day.minutes / maxDaily * 100)}%` }}/></div><span>{day.label}</span></div>)}</div></div>
-      </div>
-
-      <section className="weekly-export-card surface"><div className="export-card-icon"><FileSpreadsheet size={26}/></div><div><span className="small-kicker">YOUR WEEK, READY TO SEND</span><h2>Weekly timesheet</h2><p>Hours, absence & remarks. One file for your employer.</p></div><button className="primary-outline" onClick={() => setWeeklyExportOpen(true)}>Review & export <ArrowRight size={17}/></button></section>
-
-      {voiceAction && <div className="voice-confirm"><div><strong>Heard: “{voiceAction.transcript}”</strong><span>Confirm before the timer changes.</span></div><button onClick={confirmVoiceAction}>Confirm {voiceAction.kind}</button><button className="voice-cancel" onClick={() => setVoiceAction(null)} aria-label="Cancel voice command"><X size={17}/></button></div>}
-
-      <section id="assistant" className="assistant-card surface" aria-label="Ask RouteHours"><div className="assistant-heading"><span className="assistant-icon"><MessageCircle size={22}/></span><div><span className="small-kicker">APP GUIDE · GEMINI</span><h2>Ask RouteHours</h2><p>Ask by voice or type. Get help with the app or with structuring a note.</p></div></div><details className="assistant-help"><summary>Suggested questions</summary><div className="assistant-prompts"><button onClick={() => void askAssistant("How do I export and email my hours?")}>Export & email</button><button onClick={() => void askAssistant("How should I structure a useful shift note?")}>Structure a note</button><button onClick={() => void askAssistant("How do I set up Google Sheets?")}>Set up Sheets</button></div></details><form className="assistant-form" onSubmit={e => { e.preventDefault(); void askAssistant(); }}><input value={assistantQuestion} onChange={e => setAssistantQuestion(e.target.value)} maxLength={1200} placeholder={voiceTarget.current === "assistant" && (recording || listening) ? "Listening to your question…" : "Ask about hours, notes, voice, or exports…"} aria-label="Question for RouteHours"/><button type="button" className={`assistant-mic ${voiceTarget.current === "assistant" && (recording || listening) ? "is-active" : ""}`} aria-label={voiceTarget.current === "assistant" && (recording || listening) ? "Stop question recording" : "Dictate a question"} aria-pressed={voiceTarget.current === "assistant" && (recording || listening)} disabled={transcribing || micStarting || (recording || listening) && voiceTarget.current !== "assistant"} onClick={toggleAssistantMic}>{voiceTarget.current === "assistant" && (recording || listening) ? <MicOff size={18}/> : <Mic size={18}/>}</button><button type="submit" className="assistant-send" disabled={!assistantQuestion.trim() || assistantBusy} aria-label="Ask question"><Send size={18}/></button></form>{voiceStatus("assistant")}{(assistantOpen || assistantBusy) && <div className="assistant-reply" aria-live="polite"><div><Sparkles size={17}/><strong>RouteHours guide</strong>{assistantBusy && <span className="mini-spinner"/>}</div>{assistantBusy ? <p>Thinking through your question…</p> : assistantError ? <p className="assistant-error">{assistantError} {(!geminiApiKey && !accessCode) && <button onClick={() => setSettingsOpen(true)}>Open Settings</button>}</p> : <p>{assistantAnswer}</p>}</div>}<small>For note help, your active note draft is sent to Gemini with your question. Leave out identifying details.</small></section>
-
-      {active && <section id="quick-notes" className="notes-card surface"><div className="section-heading"><div><span className="small-kicker">ON THE ROUTE</span><h2>Quick notes</h2></div><span className="live-badge"><span/> Live shift</span></div><p>Capture the useful details while they are fresh. Leave out children’s names and identifying information.</p><div className="note-prompts" aria-label="Note prompts"><span>Start with a prompt</span>{["Route timing", "Support provided", "Follow-up"].map(prompt => <button key={prompt} onClick={() => insertNotePrompt(prompt)}>{prompt} <Plus size={13}/></button>)}</div><div className="note-compose"><textarea id="quick-note-input" value={noteInput} onChange={e => setNoteInput(e.target.value)} placeholder="What happened? Keep it short and factual." maxLength={2000}/><div className="note-compose-actions"><button type="button" className={`assistant-mic ${voiceTarget.current === "general" && (recording || listening) ? "is-active" : ""}`} aria-label={voiceTarget.current === "general" && (recording || listening) ? "Stop note recording" : "Dictate a note"} aria-pressed={voiceTarget.current === "general" && (recording || listening)} disabled={transcribing || micStarting || (recording || listening) && voiceTarget.current !== "general"} onClick={toggleNoteMic}><Mic size={19}/></button><button onClick={addNote} disabled={!cleanNoteDraft(noteInput)}><Plus size={18}/> Add note</button></div></div>{voiceStatus("general")}<small className="draft-hint">Your unfinished note stays here if you close and reopen the app.</small>{active.notes.length > 0 && <div className="note-list">{active.notes.map((note, i) => <div className="note-item" key={i}><span>{String(i + 1).padStart(2, "0")}</span><p>{note}</p><button aria-label="Remove note" onClick={() => setActive({ ...active, notes: active.notes.filter((_, n) => n !== i) })}><X size={15}/></button></div>)}</div>}</section>}
-
-      <section id="history" className="history-section surface"><div className="section-heading history-heading"><div><span className="small-kicker">YOUR RECORD</span><h2>Shift history</h2></div><div className="history-actions"><button className="secondary-btn" onClick={() => openEdit()}><Plus size={17}/> Add manually</button><div className="export-wrap"><button className="primary-outline" disabled={creatingSheet} onClick={() => setExportOpen(!exportOpen)}><ArrowDownToLine size={17}/> {creatingSheet ? "Creating…" : "Export"} <ChevronDown size={15}/></button>{exportOpen && <div className="export-menu"><button onClick={() => { setWeeklyExportOpen(true); setExportOpen(false); }}><Mail size={18}/><span><strong>Weekly timesheet & email</strong><small>Preview, Excel file or Google Sheets</small></span></button><button onClick={() => exportCsv(false)}><FileSpreadsheet size={18}/><span><strong>Download hours CSV</strong><small>Import into Google Sheets anytime</small></span></button><button onClick={() => exportCsv(true)}><FileSpreadsheet size={18}/><span><strong>Detailed log CSV</strong><small>Includes notes and AI summaries</small></span></button><button onClick={() => { download("routehours-backup.json", JSON.stringify({ shifts, active, payroll, dayDetails }, null, 2), "application/json"); setExportOpen(false); }}><ArrowDownToLine size={18}/><span><strong>Backup data</strong><small>Save a copy you can restore later</small></span></button></div>}</div></div></div>
+      {view === "today" ? <div className="today-view">
+        <div className="page-heading"><span className="small-kicker">{new Intl.DateTimeFormat("en-GB",{weekday:"long",day:"numeric",month:"long",timeZone:workZone}).format(new Date(now))}</span><h1>{active ? "You're on the clock." : lastSavedShift ? "All in a day's work." : "A fresh start."}</h1><p>{active ? "Your time is counting. Keep the details close." : lastSavedShift ? "Your hours are recorded. You're good to go." : "Get on. Tap start. We'll keep the time."}</p></div>
+        <section id="timer" className={`timer-card ${active ? "is-active" : ""}`} aria-label="Shift timer">
+          <div className="timer-card-top"><span className="card-kicker"><span className="status-dot"/>{active ? "ON SHIFT" : "READY TO GO"}</span><span className="timer-zone">{workZone.split("/").pop()?.replaceAll("_"," ")}</span></div>
+          <div className="timer-center"><div className="timer-digits" aria-live="off">{active ? clock(activeSeconds) : "00:00:00"}</div><span className="timer-sub">{active ? `Started at ${formatTime(active.start)}` : "Every minute, accounted for."}</span></div>
+          {active && <div className="inline-note"><div className="note-label"><strong>Quick note</strong><span>Private by default</span></div><div className="note-compose"><textarea id="quick-note-input" aria-label="Shift note" value={noteInput} onChange={e => setNoteInput(e.target.value)} placeholder="Anything worth remembering?" maxLength={2000}/><button type="button" className={`assistant-mic ${voiceTarget.current === "general" && (recording || listening) ? "is-active" : ""}`} aria-label={voiceTarget.current === "general" && (recording || listening) ? "Stop note recording" : "Dictate a note"} aria-pressed={voiceTarget.current === "general" && (recording || listening)} disabled={transcribing || micStarting || (recording || listening) && voiceTarget.current !== "general"} onClick={toggleNoteMic}>{recording || listening ? <MicOff size={20}/> : <Mic size={20}/>}</button></div>{voiceStatus("general")}<div className="note-tools"><button className="text-action" onClick={() => { setAssistantOpen(true); document.getElementById("help-panel")?.setAttribute("open",""); document.getElementById("assistant")?.scrollIntoView({behavior:"smooth"}); }}>Help with a note <Sparkles size={13}/></button><button className="text-action" disabled={!cleanNoteDraft(noteInput)} onClick={addNote}><Plus size={15}/> Save note</button></div>{active.notes.length > 0 && <details className="saved-notes"><summary>{active.notes.length} saved {active.notes.length === 1 ? "note" : "notes"}</summary>{active.notes.map((n,i) => <div className="note-item" key={i}><p>{n}</p><button className="icon-btn" aria-label="Remove note" onClick={() => setActive({...active,notes:active.notes.filter((_,j) => j !== i)})}><X size={15}/></button></div>)}</details>}</div>}
+          {active && activeSeconds > 12 * 3600 && now - timerCheckedAt > 3600000 && <div className="review-warning"><strong>Still working?</strong><p>This timer has passed 12 hours. Finish and correct the time if you forgot to stop it.</p><button onClick={() => setTimerCheckedAt(now)}>Yes, keep counting</button></div>}
+          <button className={`timer-button ${active ? "stop" : "start"}`} disabled={recording || listening || transcribing || micStarting} onClick={active ? stopShift : startShift}>{active ? <><span className="stop-square"/> Finish shift</> : <><Play size={18} fill="currentColor"/> Start shift</>}</button>
+          <div className="timer-foot"><ShieldCheck size={14}/>{saveStatus}</div>
+        </section>
+        {lastSavedShift && <section className="saved-confirmation"><div className="confirmation-icon"><Check size={21}/></div><div><strong>Shift recorded · {durationLabel(minutesBetween(lastSavedShift.start,lastSavedShift.end))}</strong><p>{formatTime(lastSavedShift.start)} — {formatTime(lastSavedShift.end)}</p></div><button onClick={() => openEdit(shifts.find(s => s.id === lastSavedShift.id) || lastSavedShift)}>Correct</button><button onClick={() => { if(active) return; setShifts(current => current.filter(s => s.id !== lastSavedShift.id)); setActive({start:lastSavedShift.start,notes:lastSavedShift.notes}); setLastSavedShift(null); setNotice("Timer resumed from its original start."); }}>Undo</button></section>}
+        {!active && !lastSavedShift && sorted[0] && <button className="last-shift-row" onClick={() => openEdit(sorted[0])}><span className="row-icon"><Check size={18}/></span><span><strong>Last shift</strong><small>{formatDay(sorted[0].start)} · {formatTime(sorted[0].start)}–{formatTime(sorted[0].end)}</small></span><b>{durationLabel(minutesBetween(sorted[0].start,sorted[0].end))}</b><ArrowRight size={16}/></button>}
+        <button className="week-peek" onClick={() => {setSelectedWeek(currentMonday);setView("history");}}><span><span className="small-kicker">THIS WEEK</span><strong>{durationLabel(weekMinutes)}</strong></span><span>{weeklyGoalHours ? `of ${weeklyGoalHours}h goal` : `${weekShifts.length} shifts`}<ArrowRight size={18}/></span></button>
+        <details id="help-panel" className="help-panel"><summary><span><Sparkles size={18}/> Ask or log with your voice</span><Plus size={17}/></summary><section id="assistant" className="assistant-card surface" aria-label="Ask RouteHours"><div className="assistant-heading"><span className="assistant-icon"><MessageCircle size={22}/></span><div><span className="small-kicker">YOUR ASSISTANT</span><h2>A little help.</h2><p>Ask by voice or type. Get help with the app or with structuring a note.</p></div></div><details className="assistant-help"><summary>Suggested questions</summary><div className="assistant-prompts"><button onClick={() => void askAssistant("How do I export and email my hours?")}>Export & email</button><button onClick={() => void askAssistant("How should I structure a useful shift note?")}>Structure a note</button><button onClick={() => void askAssistant("How do I set up Google Sheets?")}>Set up Sheets</button></div></details><form className="assistant-form" onSubmit={e => { e.preventDefault(); void askAssistant(); }}><input value={assistantQuestion} onChange={e => setAssistantQuestion(e.target.value)} maxLength={1200} placeholder={voiceTarget.current === "assistant" && (recording || listening) ? "Listening to your question…" : "Ask a question or describe your hours…"} aria-label="Question for RouteHours"/><button type="button" className={`assistant-mic ${voiceTarget.current === "assistant" && (recording || listening) ? "is-active" : ""}`} aria-label={voiceTarget.current === "assistant" && (recording || listening) ? "Stop question recording" : "Dictate a question"} aria-pressed={voiceTarget.current === "assistant" && (recording || listening)} disabled={transcribing || micStarting || (recording || listening) && voiceTarget.current !== "assistant"} onClick={toggleAssistantMic}>{voiceTarget.current === "assistant" && (recording || listening) ? <MicOff size={18}/> : <Mic size={18}/>}</button><button type="submit" className="assistant-send" disabled={!assistantQuestion.trim() || assistantBusy} aria-label="Ask question"><Send size={18}/></button></form><button className="text-action" disabled={!assistantQuestion.trim()} onClick={() => setVoicePlanText(assistantQuestion)}><Sparkles size={15}/> Turn these words into hours</button>{voiceStatus("assistant")}{(assistantOpen || assistantBusy) && <div className="assistant-reply" aria-live="polite"><div><Sparkles size={17}/><strong>RouteHours guide</strong>{assistantBusy && <span className="mini-spinner"/>}</div>{assistantBusy ? <p>Thinking through your question…</p> : assistantError ? <p className="assistant-error">{assistantError} {(!geminiApiKey && !accessCode) && <button onClick={() => setSettingsOpen(true)}>Open Settings</button>}</p> : <p>{assistantAnswer}</p>}</div>}<small>For note help, your active note draft is sent to Gemini with your question. Leave out identifying details.</small></section></details>
+        {!active && <button className="text-action add-past" onClick={() => openEdit()}><Plus size={16}/> Add a past shift</button>}
+      </div> : <div className="week-layout"><WeekView week={selectedWeek} onWeek={setSelectedWeek} shifts={shifts} profile={payroll} details={dayDetails} zone={workZone} onReview={() => setWeeklyExportOpen(true)} onEdit={openEdit} onAdd={() => openEdit()}/><details className="all-history"><summary>All shifts & exports <History size={17}/></summary><section id="history" className="history-section surface"><div className="section-heading history-heading"><div><span className="small-kicker">YOUR RECORD</span><h2>Shift history</h2></div><div className="history-actions"><button className="secondary-btn" onClick={() => openEdit()}><Plus size={17}/> Add manually</button><div className="export-wrap"><button className="primary-outline" disabled={creatingSheet} onClick={() => setExportOpen(!exportOpen)}><ArrowDownToLine size={17}/> {creatingSheet ? "Creating…" : "Export"} <ChevronDown size={15}/></button>{exportOpen && <div className="export-menu"><button onClick={() => { setWeeklyExportOpen(true); setExportOpen(false); }}><Mail size={18}/><span><strong>Weekly timesheet & email</strong><small>Preview, Excel file or Google Sheets</small></span></button><button onClick={() => exportCsv(false)}><FileSpreadsheet size={18}/><span><strong>Download hours CSV</strong><small>Import into Google Sheets anytime</small></span></button><button onClick={() => exportCsv(true)}><FileSpreadsheet size={18}/><span><strong>Detailed log CSV</strong><small>Includes notes and AI summaries</small></span></button><button onClick={() => { void exportBackup(); setExportOpen(false); }}><ArrowDownToLine size={18}/><span><strong>Backup data</strong><small>Save a copy you can restore later</small></span></button></div>}</div></div></div>
         <div className="history-toolbar"><div className="history-filters" role="group" aria-label="Filter shifts">{([ ["all", "All shifts"], ["week", "This week"], ["month", "This month"] ] as const).map(([value, label]) => <button key={value} className={historyRange === value ? "selected" : ""} aria-pressed={historyRange === value} onClick={() => setHistoryRange(value)}>{label}</button>)}</div><label className="history-search"><Search size={16}/><input value={historyQuery} onChange={e => setHistoryQuery(e.target.value)} placeholder="Search dates or notes" aria-label="Search shifts"/></label></div>
         {shifts.length > 0 && <p className="history-count">Showing {filteredShifts.length} of {shifts.length} shifts · Weekly export lets you choose a week. CSV includes all shifts.</p>}
-        {sorted.length === 0 ? <div className="empty-state"><div className="empty-illustration"><Clock3 size={32}/></div><h3>Your shifts will show up here</h3><p>Start the timer for your next bus ride, or add a past shift manually.</p></div> : filteredShifts.length === 0 ? <div className="empty-state filter-empty"><div className="empty-illustration"><Search size={29}/></div><h3>No matching shifts</h3><p>Try another date range or search term.</p><button onClick={() => { setHistoryRange("all"); setHistoryQuery(""); }}>Clear filters</button></div> : <div className="shift-list">{filteredShifts.map(shift => { const open = expanded === shift.id; return <div className={`shift-item ${open ? "expanded" : ""}`} key={shift.id}><button className="shift-summary" onClick={() => setExpanded(open ? null : shift.id)} aria-expanded={open}><span className="shift-date-icon"><CalendarDays size={18}/></span><span className="shift-main"><strong>{formatDay(shift.start)}</strong><small>{formatTime(shift.start)} <ArrowRight size={13}/> {formatTime(shift.end)}</small></span><span className="shift-duration">{durationLabel(minutesBetween(shift.start, shift.end))}</span><ChevronDown className="shift-chevron" size={18}/></button>{open && <div className="shift-detail"><div className="detail-grid"><div><span className="detail-label">STARTED</span><strong>{new Date(shift.start).toLocaleString("en-GB")}</strong></div><div><span className="detail-label">FINISHED</span><strong>{new Date(shift.end).toLocaleString("en-GB")}</strong></div><div><span className="detail-label">DECIMAL HOURS</span><strong>{(minutesBetween(shift.start, shift.end) / 60).toFixed(2)} h</strong></div></div><div className="detail-notes"><span className="detail-label">YOUR NOTES</span>{shift.notes.length ? shift.notes.map((note, i) => <p key={i}>• {note}</p>) : <p className="muted">No notes recorded.</p>}</div>{shift.summaryStatus === "pending" && <div className="ai-panel"><Sparkles size={18}/><span>Creating your summary…</span><span className="mini-spinner"/></div>}{shift.summary && <div className="summary-panel"><div className="summary-title"><Sparkles size={17}/> AI SHIFT SUMMARY</div><p>{shift.summary.overview}</p>{([ ["Activities", shift.summary.activities], ["Notable moments", shift.summary.notable], ["Follow-up", shift.summary.followUp] ] as const).map(([title, values]) => values.length > 0 && <div className="summary-group" key={title}><strong>{title}</strong><ul>{values.map((value, i) => <li key={i}>{value}</li>)}</ul></div>)}</div>}{shift.summaryStatus === "error" && shift.summaryError && <p className="summary-error" role="alert">{shift.summaryError}</p>}{(!shift.summary || shift.summaryStatus === "error") && <button className="text-action" onClick={() => retrySummary(shift)}><Sparkles size={16}/>{shift.summaryStatus === "error" ? "Retry AI summary" : "Generate AI summary"}</button>}<div className="shift-controls"><button onClick={() => void copyShiftHours(shift)}><Clipboard size={15}/> Copy hours</button><button onClick={() => openEdit(shift)}><Pencil size={15}/> Edit shift</button><button className="danger" onClick={() => deleteShift(shift.id)}><Trash2 size={15}/> Delete</button></div></div>}</div>; })}</div>}
-      </section>
+        {sorted.length === 0 ? <div className="empty-state"><div className="empty-illustration"><Clock3 size={32}/></div><h3>Your shifts will show up here</h3><p>Start the timer for your next bus ride, or add a past shift manually.</p></div> : filteredShifts.length === 0 ? <div className="empty-state filter-empty"><div className="empty-illustration"><Search size={29}/></div><h3>No matching shifts</h3><p>Try another date range or search term.</p><button onClick={() => { setHistoryRange("all"); setHistoryQuery(""); }}>Clear filters</button></div> : <div className="shift-list">{filteredShifts.map(shift => { const open = expanded === shift.id; return <div className={`shift-item ${open ? "expanded" : ""}`} key={shift.id}><button className="shift-summary" onClick={() => setExpanded(open ? null : shift.id)} aria-expanded={open}><span className="shift-date-icon"><CalendarDays size={18}/></span><span className="shift-main"><strong>{formatDay(shift.start)}</strong><small>{formatTime(shift.start)} <ArrowRight size={13}/> {formatTime(shift.end)}</small></span><span className="shift-duration">{durationLabel(minutesBetween(shift.start, shift.end))}</span><ChevronDown className="shift-chevron" size={18}/></button>{open && <div className="shift-detail"><div className="detail-grid"><div><span className="detail-label">STARTED</span><strong>{new Date(shift.start).toLocaleString("en-GB", { timeZone: workZone })}</strong></div><div><span className="detail-label">FINISHED</span><strong>{new Date(shift.end).toLocaleString("en-GB", { timeZone: workZone })}</strong></div><div><span className="detail-label">DECIMAL HOURS</span><strong>{(minutesBetween(shift.start, shift.end) / 60).toFixed(2)} h</strong></div></div><div className="detail-notes"><span className="detail-label">YOUR NOTES</span>{shift.notes.length ? shift.notes.map((note, i) => <p key={i}>• {note}</p>) : <p className="muted">No notes recorded.</p>}</div>{shift.summaryStatus === "pending" && <div className="ai-panel"><Sparkles size={18}/><span>Creating your summary…</span><span className="mini-spinner"/></div>}{shift.summary && <div className="summary-panel"><div className="summary-title"><Sparkles size={17}/> AI SHIFT SUMMARY</div><p>{shift.summary.overview}</p>{([ ["Activities", shift.summary.activities], ["Notable moments", shift.summary.notable], ["Follow-up", shift.summary.followUp] ] as const).map(([title, values]) => values.length > 0 && <div className="summary-group" key={title}><strong>{title}</strong><ul>{values.map((value, i) => <li key={i}>{value}</li>)}</ul></div>)}</div>}{shift.summaryStatus === "error" && shift.summaryError && <p className="summary-error" role="alert">{shift.summaryError}</p>}{(!shift.summary || shift.summaryStatus === "error") && <button className="text-action" onClick={() => retrySummary(shift)}><Sparkles size={16}/>{shift.summaryStatus === "error" ? "Retry AI summary" : "Generate AI summary"}</button>}<div className="shift-controls"><button onClick={() => void copyShiftHours(shift)}><Clipboard size={15}/> Copy hours</button><button onClick={() => openEdit(shift)}><Pencil size={15}/> Edit shift</button><button className="danger" onClick={() => deleteShift(shift.id)}><Trash2 size={15}/> Delete</button></div></div>}</div>; })}</div>}
+      </section></details></div>}
+      {voiceAction && <div className="voice-confirm"><div><strong>Heard: “{voiceAction.transcript}”</strong><span>Confirm before the timer changes.</span></div><button onClick={confirmVoiceAction}>Confirm {voiceAction.kind}</button><button className="voice-cancel" onClick={() => setVoiceAction(null)} aria-label="Cancel voice command"><X size={17}/></button></div>}
       {sheetUrl && <div className="sheet-success"><FileSpreadsheet size={20}/><span>{sheetShareStatus || "Your Google Sheet is ready."}</span><a href={sheetUrl} target="_blank" rel="noopener noreferrer">Open Google Sheet <ArrowRight size={15}/></a></div>}
-      <footer className="footer"><div><span className="brand-mini">RH</span> RouteHours</div><span>Shift records stay in this browser; AI and exports send selected data when used.</span></footer>
+      <footer className="footer"><span>Made for your working day.</span><span>RouteHours · 2.0</span></footer>
     </main>
-
-    <nav className="mobile-dock" aria-label="Quick navigation"><a href="#timer" onClick={() => setView("today")}><Clock3 size={19}/><span>Timer</span></a><a href="#assistant" onClick={() => setView("today")}><Mic size={19}/><span>Ask</span></a><a href="#history" onClick={() => setView("history")}><History size={19}/><span>History</span></a></nav>
+    <nav className="mobile-dock" aria-label="Main navigation"><button aria-current={view === "today" ? "page" : undefined} onClick={() => {setView("today");window.scrollTo({top:0});}}><Clock3 size={20}/><span>Today</span></button><button aria-current={view === "history" ? "page" : undefined} onClick={() => {setView("history");window.scrollTo({top:0});}}><CalendarDays size={20}/><span>Week</span></button></nav>
+    {voicePlanText !== null && <VoiceReview transcript={voicePlanText} shifts={shifts} zone={workZone} apiKey={geminiApiKey} accessCode={accessCode} onClose={() => setVoicePlanText(null)} onApply={value => {setShifts(value);setNotice("Your reviewed changes were recorded.");}}/>}
+    {storageError && <div className="modal-backdrop"><div className="modal" role="alertdialog" aria-modal="true" aria-label="Saving paused"><h2>Let's keep your hours safe.</h2><p>{storageError}</p><button className="modal-submit" onClick={() => void exportBackup()}>Download this screen's records</button><button className="secondary-btn" onClick={() => location.reload()}>Reload latest saved version</button></div></div>}
+    {restorePreview && <div className="modal-backdrop"><div className="modal" role="dialog" aria-modal="true" aria-label="Restore preview"><div className="modal-head"><h2>Restore your hours</h2><button className="icon-btn" aria-label="Cancel restore" onClick={() => setRestorePreview(null)}><X size={20}/></button></div><p>{restorePreview.shifts.length} shifts in this file. You currently have {shifts.length}.</p><p><b>Merge</b> adds missing shifts and keeps current entries when IDs or times match. <b>Replace</b> uses the backup's shifts, timer and profile. Email records are merged in both cases.</p><button className="modal-submit" onClick={() => void applyRestore(true)}>Merge with my records</button><button className="secondary-btn" onClick={() => void applyRestore(false)}>Replace from backup</button><button className="text-action" onClick={() => void exportBackup()}>Back up current records first</button></div></div>}
 
     {notice && <div className="toast" role="status"><Info size={17}/><span>{notice}</span><button aria-label="Dismiss notification" onClick={() => setNotice("")}><X size={15}/></button></div>}
 
     {editing && <div className="modal-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) setEditing(null); }}><div className="modal" role="dialog" aria-modal="true" aria-label="Edit shift"><div className="modal-head"><div><span className="small-kicker">SHIFT DETAILS</span><h2>{shifts.some(s => s.id === editing.id) ? "Edit shift" : "Add a shift"}</h2></div><button className="icon-btn" aria-label="Close" onClick={() => setEditing(null)}><X size={19}/></button></div><label>Start date & time<input type="datetime-local" value={editStart} onChange={e => setEditStart(e.target.value)}/></label><label>End date & time<input type="datetime-local" value={editEnd} onChange={e => setEditEnd(e.target.value)}/></label><label>Notes <small>One note per line. Avoid identifying children.</small><textarea value={editNotes} onChange={e => setEditNotes(e.target.value)} rows={5}/></label>{modalError && <p className="form-error">{modalError}</p>}<button className="modal-submit" onClick={saveEdit}>Save shift <ArrowRight size={17}/></button></div></div>}
 
-    {weeklyExportOpen && <WeeklyExport shifts={shifts} active={Boolean(active)} profile={payroll} onProfile={setPayroll} details={dayDetails} onDetails={setDayDetails} onClose={closeWeeklyExport} clientId={normalizeClientId(googleClientId) || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || ""} onSettings={() => { setWeeklyExportOpen(false); setSettingsOpen(true); }} onGoogle={(report, email) => { setShareReport(report); setShareRetryId(""); setShareError(""); setWeeklyExportOpen(false); if (email) { setShareRecipient(payroll.email); setShareOpen(true); } else exportGoogleSheet(false, report); }}/> }
+    {weeklyExportOpen && <WeeklyExport initialWeek={selectedWeek} zone={workZone} shifts={shifts} active={Boolean(active)} profile={payroll} onProfile={setPayroll} details={dayDetails} onDetails={setDayDetails} onClose={closeWeeklyExport} clientId={normalizeClientId(googleClientId) || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || ""} onSettings={() => { setWeeklyExportOpen(false); setSettingsOpen(true); }} onGoogle={(report, email) => { setShareReport(report); setShareRetryId(""); setShareError(""); setWeeklyExportOpen(false); if (email) { setShareRecipient(payroll.email); setShareOpen(true); } else exportGoogleSheet(false, report); }}/> }
     {shareOpen && <div className="modal-backdrop" onMouseDown={e => { if (e.target === e.currentTarget && !creatingSheet) setShareOpen(false); }}><div className="modal share-modal" role="dialog" aria-modal="true" aria-label="Email Google Sheet"><div className="modal-head"><div><span className="small-kicker">GOOGLE SHEETS</span><h2>{shareRetryId ? "Finish sharing" : "Create & email"}</h2></div><button className="icon-btn" aria-label="Close" disabled={creatingSheet} onClick={() => setShareOpen(false)}><X size={19}/></button></div><p>{shareRetryId ? "Your Sheet was created. Retry sharing this same file." : "Create a new hours Sheet in your Google Drive and let Google email access to a recipient."}</p><label>Recipient email<input type="email" value={shareRecipient} onChange={e => { setShareRecipient(e.target.value); setShareError(""); }} placeholder="name@example.com" autoComplete="email"/></label><label>Access<select value={shareRole} onChange={e => setShareRole(e.target.value as "reader" | "writer")}><option value="reader">Viewer · can read</option><option value="writer">Editor · can change the Sheet</option></select></label><p className="share-privacy">{shareReport ? `${shareReport.title} · ${shareReport.profile.name || "No name entered"}. Includes times, absence entries, extra remarks${shareReport.includesNotes ? ", shift notes and AI summaries" : ""}.` : "Includes saved hours and dates."} Check the email before sending.</p>{shareError && <p className="form-error" role="alert">{shareError}</p>}{shareRetryId && sheetUrl && <a className="share-existing" href={sheetUrl} target="_blank" rel="noopener noreferrer">Open the created Sheet <ArrowRight size={15}/></a>}<button className="modal-submit" disabled={creatingSheet || !validEmail(shareRecipient)} onClick={() => exportGoogleSheet(true)}>{creatingSheet ? "Working with Google…" : shareRetryId ? "Retry sharing" : "Create & send access"} <Mail size={17}/></button></div></div>}
 
     {settingsOpen && <div className="modal-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) setSettingsOpen(false); }}><div className="modal settings-modal" role="dialog" aria-modal="true" aria-label="Settings">
       <div className="modal-head"><div><span className="small-kicker">PREFERENCES</span><h2>Settings</h2></div><button className="icon-btn" aria-label="Close" onClick={() => setSettingsOpen(false)}><X size={19}/></button></div>
       <div className="setting-block"><div className="setting-title"><span className="setting-icon"><FileSpreadsheet size={19}/></span><div><strong>Timesheet details</strong><p>Filled in automatically on your weekly export.</p></div></div><label>Full name<input value={payroll.name} maxLength={120} onChange={e => { setPayroll({ ...payroll, name: e.target.value }); setSettingsSaved(false); }}/></label><label>Payroll number · Løn-nr.<input value={payroll.number} maxLength={60} onChange={e => { setPayroll({ ...payroll, number: e.target.value }); setSettingsSaved(false); }}/></label><label>Employer email<input type="email" value={payroll.email} maxLength={254} onChange={e => { setPayroll({ ...payroll, email: e.target.value }); setSettingsSaved(false); }}/></label></div>
+      <div className="connection-overview"><div><span>Voice</span><strong>{groqConnection?.ok ? "Connected" : groqApiKey ? "Key saved" : "Browser dictation"}</strong></div><div><span>AI</span><strong>{aiConnection?.ok ? "Connected" : geminiApiKey || accessCode ? "Key saved" : "Not set up"}</strong></div><div><span>Google</span><strong>{googleAccount || "Not connected"}</strong></div></div>
+      <div className="setting-block"><div className="setting-title"><strong>Your records</strong><span>{saveStatus}</span></div><p>Last backup downloaded: {lastBackup ? new Date(lastBackup).toLocaleString("en-GB") : "Not yet"}</p><button className="secondary-btn" onClick={() => void exportBackup()}><Download size={17}/> Download backup</button><button className="text-action" onClick={async () => { const granted = await navigator.storage?.persist?.(); setNotice(granted ? "Persistent storage granted. Keep external backups too." : "Browser-managed storage is active. Keep an external backup."); }}>Protect device storage</button><label>Work timezone<select value={workZone} onChange={e => {setWorkZone(e.target.value);setSettingsSaved(false);}}>{Array.from(new Set([workZone,"Europe/Copenhagen","Europe/London","Europe/Berlin","Asia/Dubai","America/New_York"])).map(z => <option key={z}>{z}</option>)}</select><small>Used for all displayed hours and weekly exports.</small></label></div>
       <div className="setting-block appearance-settings"><div className="setting-title"><span className="setting-icon"><Moon size={19}/></span><div><strong>Appearance</strong><p>Pick the look that works best for you.</p></div></div><div className="theme-options" role="group" aria-label="Appearance">{([ ["system", "System"], ["light", "Light"], ["dark", "Dark"] ] as const).map(([value, label]) => <button key={value} className={themeMode === value ? "selected" : ""} aria-pressed={themeMode === value} onClick={() => { setThemeMode(value); setSettingsSaved(false); }}>{value === "dark" ? <Moon size={15}/> : value === "light" ? <Sun size={15}/> : <Settings2 size={15}/>} {label}</button>)}</div><label className="goal-setting">Weekly hours goal <small>Optional. Only logged shifts count toward it.</small><div><input type="number" min="0" max="80" step="0.5" value={weeklyGoalHours || ""} onChange={e => { setWeeklyGoalHours(Math.max(0, Math.min(80, Number(e.target.value) || 0))); setSettingsSaved(false); }} placeholder="No goal"/><span>hours</span></div></label></div>
       <div className="setting-block">
         <div className="setting-title"><span className="setting-icon"><Sparkles size={19}/></span><div><strong>Automatic AI summaries</strong><p>Organize your notes when you stop a shift.</p></div><button className={`toggle ${aiEnabled ? "on" : ""}`} role="switch" aria-checked={aiEnabled} aria-label="Automatic AI summaries" onClick={() => { setAiEnabled(!aiEnabled); setSettingsSaved(false); }}><span/></button></div>
@@ -711,14 +786,14 @@ export default function Home() {
       </div>
       <div className="setting-block">
         <div className="setting-title"><span className="setting-icon"><FileSpreadsheet size={19}/></span><div><strong>Google Sheets & Gmail</strong><p>One Web client ID for Sheets and sending attachments.</p></div></div>
-        <label className="access-label">OAuth client ID <small>Paste the <b>Web application</b> client ID from <a href="https://console.cloud.google.com/auth/clients" target="_blank" rel="noopener noreferrer">Google Cloud clients</a>. You can also paste its downloaded JSON. Do not paste the client secret.</small><input type="text" value={googleClientId} onChange={e => { setGoogleClientId(e.target.value); setSettingsSaved(false); setSettingsSaveError(""); }} placeholder="...apps.googleusercontent.com" autoComplete="off" autoCapitalize="none" spellCheck={false}/></label>
+        <button className="modal-submit" disabled={googleConnecting} onClick={() => void connectGoogle()}>{googleConnecting ? "Connecting…" : googleAccount ? "Change Google account" : "Connect Google"}<Mail size={17}/></button>{googleAccount && <p className="connection-result success">Connected as {googleAccount}. You choose the sending account again when sending.</p>}{googleError && <p className="form-error">{googleError}</p>}<details className="advanced-ai"><summary>Google setup & advanced client ID</summary><label className="access-label">OAuth client ID <small>Paste the <b>Web application</b> client ID from <a href="https://console.cloud.google.com/auth/clients" target="_blank" rel="noopener noreferrer">Google Cloud clients</a>. You can also paste its downloaded JSON. Do not paste the client secret.</small><input type="text" value={googleClientId} onChange={e => { setGoogleClientId(e.target.value); setSettingsSaved(false); setSettingsSaveError(""); }} placeholder="...apps.googleusercontent.com" autoComplete="off" autoCapitalize="none" spellCheck={false}/></label>
         {googleClientId && <p className={`id-status ${validClientId(normalizeClientId(googleClientId)) ? "valid" : "invalid"}`}>{validClientId(normalizeClientId(googleClientId)) ? "Client ID format looks right. Save it below, then use Export." : "This does not look like a Web application client ID yet."}</p>}
         <p className="origin-help">For direct email, <a href="https://console.cloud.google.com/apis/library/gmail.googleapis.com" target="_blank" rel="noopener noreferrer">enable Gmail API</a> in the same project and add <code>https://www.googleapis.com/auth/gmail.send</code> in <a href="https://console.cloud.google.com/auth/scopes" target="_blank" rel="noopener noreferrer">Google Data Access</a>. You review the recipient, message and attachment before sending.</p><button className="google-save" onClick={saveSettings}><Check size={16}/> Save Google client ID</button>
         <p className="origin-help">In that OAuth client, add <code>{window.location.origin}</code> under <b>Authorized JavaScript origins</b>. Enable both the <a href="https://console.cloud.google.com/apis/library/sheets.googleapis.com" target="_blank" rel="noopener noreferrer">Google Sheets API</a> and <a href="https://console.cloud.google.com/apis/library/drive.googleapis.com" target="_blank" rel="noopener noreferrer">Google Drive API</a>. Add your Google account as a test user if the app is in testing.</p>
-        <p className="origin-help">An old Web client ID can work when this website origin and both APIs are configured in its Google Cloud project. After saving, use <b>Export</b> to create or email a Sheet.</p>
+        <p className="origin-help">An old Web client ID can work when this website origin and both APIs are configured in its Google Cloud project. After saving, use <b>Week → Review & send</b> to create or email a Sheet.</p></details>
       </div>
-      <div className="setting-block"><div className="setting-title"><span className="setting-icon"><RotateCcw size={19}/></span><div><strong>Restore a backup</strong><p>Replace this browser’s history from a RouteHours JSON file.</p></div></div><input ref={importing} type="file" accept="application/json,.json" className="sr-only" onChange={e => void importBackup(e.target.files?.[0])}/><button className="secondary-btn restore-btn" onClick={() => importing.current?.click()}>Choose backup file <ArrowRight size={16}/></button></div>
-      <div className="settings-save-bar"><button className="modal-submit" onClick={saveSettings}><Check size={17}/> Save settings</button>{settingsSaved && <span className="settings-saved" role="status"><Check size={15}/> Saved in this browser. Your settings will still be here when you reopen the app.</span>}{settingsSaveError && <span className="settings-save-error" role="alert">{settingsSaveError}</span>}</div>
+      <div className="setting-block"><div className="setting-title"><span className="setting-icon"><RotateCcw size={19}/></span><div><strong>Restore a backup</strong><p>Preview a backup, then merge or replace your hours.</p></div></div><input ref={importing} type="file" accept="application/json,.json" className="sr-only" onChange={e => void importBackup(e.target.files?.[0])}/><button className="secondary-btn restore-btn" onClick={() => importing.current?.click()}>Choose backup file <ArrowRight size={16}/></button></div>
+      <div className="settings-save-bar"><button className="modal-submit" onClick={saveSettings}><Check size={17}/> Save settings</button>{settingsSaved && <span className="settings-saved" role="status"><Check size={15}/> Saved on this device.</span>}{settingsSaveError && <span className="settings-save-error" role="alert">{settingsSaveError}</span>}</div>
     </div></div>}
     {installOpen && <div className="modal-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) setInstallOpen(false); }}><div className="modal install-modal" role="dialog" aria-modal="true" aria-label="Install RouteHours"><div className="modal-head"><div><span className="small-kicker">ON YOUR PHONE</span><h2>Install RouteHours</h2></div><button className="icon-btn" aria-label="Close" onClick={() => setInstallOpen(false)}><X size={19}/></button></div><p>Open your deployed RouteHours website in your phone browser, then add it to your Home Screen:</p><div className="install-steps"><strong>iPhone · Safari</strong><ol><li>Tap Share.</li><li>Tap <b>Add to Home Screen</b>.</li><li>Turn on <b>Open as Web App</b>, then tap Add.</li></ol></div><div className="install-steps"><strong>Android · Chrome</strong><ol><li>Tap the three-dot menu.</li><li>Tap <b>Install app</b> or <b>Install and create shortcut</b>.</li><li>Confirm Install.</li></ol></div><p className="install-fine">Use the new Home Screen icon for your shifts. Your records stay in that browser installation, so export a backup regularly.</p></div></div>}
   </div>;

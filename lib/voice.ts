@@ -6,6 +6,8 @@ export type VoiceIntent =
 
 export function interpretVoice(transcript: string): VoiceIntent {
   const phrase = transcript.trim();
+  if (/^(start|begynd)( min| en)? (vagt|tur)\b/i.test(phrase)) return { kind: "start" };
+  if (/^(stop|afslut)( min| en)? (vagt|tur)\b/i.test(phrase)) return { kind: "stop" };
   if (/^(please )?(start|begin)( my| the)? shift\b/i.test(phrase)) return { kind: "start" };
   if (/^(please )?(stop|end|finish)( my| the)? shift\b/i.test(phrase)) return { kind: "stop" };
   const hours = phrase.match(/^(?:i\s+)?(?:worked|did|log|add)\s+(\d+(?:\.\d+)?)\s*(?:hours?|hrs?)\b/i);

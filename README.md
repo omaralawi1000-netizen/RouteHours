@@ -95,3 +95,13 @@ pnpm test
 pnpm typecheck
 pnpm build
 ```
+
+## Version 2
+
+Today and Week are the primary views. The design uses one stylesheet, neutral surfaces and an indigo accent. Work timezone is saved explicitly (default Europe/Copenhagen). All daily, weekly and monthly totals share the same clipped interval ledger. Overnight rounding and DST are tested. Voice time proposals are interpreted by Gemini, validated and reviewed before any records change. Groq remains the dictation provider.
+
+IndexedDB stores the versioned record snapshot with revision checks; competing tabs cannot silently overwrite. Existing localStorage data is validated and migrated on first open. Invalid data enters recovery without being replaced. A missing database after migration also enters recovery. Small theme hints remain in localStorage. Backups exclude provider credentials and include running note drafts and original email attachments. Restore previews allow merge or replacement; attachments and hours restore in one transaction. No cloud synchronization is implied.
+
+Gmail requires Connect Gmail before Send, exposing the sender address first. Reviewed reports and original files are persisted. Sending is claimed transactionally to avoid concurrent sends; confirmation stores the Gmail message ID. Unconfirmed sends block retries until the user checks Gmail. A Sent label confirms Gmail acceptance, not employer receipt or reading. Later exported-content changes show Changed since sending.
+
+Automated browser QA uses an isolated profile and simulated provider responses; it never sends real email. Actual phone microphone accuracy and live Google/Gemini account permissions still require the user's device and credentials.
