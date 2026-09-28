@@ -3,6 +3,7 @@ import Script from "next/script";
 import PwaRegistration from "./pwa-registration";
 import "./globals.css";
 import "./polish.css";
+import "./calm.css";
 
 export const metadata: Metadata = {
   title: "RouteHours — Bus shift tracker",
