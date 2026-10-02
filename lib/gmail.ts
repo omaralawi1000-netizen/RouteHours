@@ -1,3 +1,5 @@
+import { GOOGLE_EMAIL_SCOPE, readGoogleEmail, requestGoogleToken, type GoogleAccount } from "./google-auth.ts";
+
 export const GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.send";
 export function validRecipient(value: string) { return /^[^\s<>@,;]+@[^\s<>@,;]+\.[^\s<>@,;]+$/.test(value.trim()) && !/[\r\n]/.test(value); }
 function base64(bytes: Uint8Array) {
@@ -34,27 +36,11 @@ export async function gmailMessage(to: string, subject: string, message: string,
   return encoded(mime).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
 }
 
-export function gmailToken(clientId: string): Promise<{ token: string; email: string }> {
-  return new Promise((resolve, reject) => {
-    if (!/^[\w-]+\.apps\.googleusercontent\.com$/.test(clientId)) { reject(new Error("Add your Google OAuth client ID in Settings first. Gmail uses the same Web client ID as Sheets.")); return; }
-    type Google = { accounts: { oauth2: { initTokenClient: (config: { client_id: string; scope: string; include_granted_scopes: boolean; callback: (response: { access_token?: string; error?: string }) => void; error_callback: (error: { type?: string }) => void }) => { requestAccessToken: (options: { prompt: string }) => void } } } };
-    const google = (window as Window & { google?: Google }).google;
-    if (!google?.accounts?.oauth2) { reject(new Error("Google sign-in is still loading. Check your connection and try again.")); return; }
-    const client = google.accounts.oauth2.initTokenClient({
-      client_id: clientId, scope: `${GMAIL_SCOPE} https://www.googleapis.com/auth/userinfo.email`, include_granted_scopes: false,
-      callback: response => {
-        if (!response.access_token) { reject(new Error(response.error === "access_denied" ? "Gmail permission was not granted. Nothing was sent." : "Google could not authorize Gmail. Nothing was sent.")); return; }
-        const token = response.access_token;
-        void fetch("https://www.googleapis.com/oauth2/v2/userinfo", { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15000) }).then(async result => {
-          const account = await result.json();
-          if (!result.ok || typeof account.email !== "string" || !validRecipient(account.email)) throw new Error("Could not identify your Google email address. Nothing was sent.");
-          resolve({ token, email: account.email });
-        }).catch(() => reject(new Error("Could not identify your Google email address. Allow email-address access when signing in. Nothing was sent.")));
-      },
-      error_callback: error => reject(new Error(error.type === "popup_closed" ? "Google sign-in was closed. Nothing was sent." : "Google sign-in could not open. Allow pop-ups for RouteHours and try again.")),
-    });
-    client.requestAccessToken({ prompt: "select_account" });
-  });
+export async function gmailToken(clientId: string): Promise<GoogleAccount> {
+  try {
+    const grant = await requestGoogleToken(clientId, [GMAIL_SCOPE, GOOGLE_EMAIL_SCOPE]);
+    return { ...grant, email: await readGoogleEmail(grant.token) };
+  } catch (error) { throw new Error(`${error instanceof Error ? error.message : "Google could not authorize Gmail."} Nothing was sent.`); }
 }
 
 export async function sendGmailMessage(token: string, raw: string): Promise<string> {
@@ -68,7 +54,8 @@ export async function sendGmailMessage(token: string, raw: string): Promise<stri
   if (!response.ok) {
     const text = String(data?.error?.message || "");
     if (/disabled|not been used|SERVICE_DISABLED|accessNotConfigured/i.test(text) || data?.error?.details?.some((d: { reason?: string }) => d.reason === "SERVICE_DISABLED")) throw new Error("Enable the Gmail API in the Google Cloud project that owns your client ID, then try again. Nothing was sent.");
-    if (response.status === 401 || response.status === 403) throw new Error("Gmail did not authorize sending. Enable Gmail API, allow the gmail.send permission, and add your Google account as a test user if needed. Nothing was sent.");
+    if (response.status === 401) throw new Error("Your Gmail session expired or was revoked. Connect Gmail again before sending. Nothing was sent.");
+    if (response.status === 403) throw new Error("Gmail did not authorize sending. Enable Gmail API, allow the gmail.send permission, and add your Google account as a test user if needed. Nothing was sent.");
     throw new Error(`Gmail rejected this message (${response.status}). ${text || "Try again later."}`);
   }
   if (typeof data?.id !== "string") throw new Error("Gmail returned no message confirmation. Check Sent before trying again.");

@@ -3,12 +3,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { animate } from "motion/mini";
 import WeeklyExport from "./weekly-export";
+import GoogleSetup from "./google-setup";
 import WeekView from "./week-view";
 import VoiceReview from "./voice-review";
+import OfflineStatus, { useOnlineStatus } from "./offline-status";
 import { dateInZone, timeInZone, zonedInstant, mondayOf, addDays, periodMinutes, shiftWarnings, DEFAULT_ZONE } from "@/lib/ledger";
 import { loadState, saveState, stateSignature, decodeSubmissions, validateBackup, allSubmissions, saveSubmission, type Submission } from "@/lib/storage";
 import { isTimeRequest } from "@/lib/voice-plan";
-import { gmailToken } from "@/lib/gmail";
+import { googleAccount as connectGoogleAccount, requestGoogleToken, GOOGLE_FILE_SCOPE, normalizeGoogleClientId as normalizeClientId, validGoogleClientId as validClientId } from "@/lib/google-auth";
 import { type PayrollProfile, type DayDetails, type WeeklyReport } from "@/lib/timesheet";
 import { Activity, ArrowDownToLine, ArrowRight, CalendarDays, Check, ChevronDown, Clipboard, Clock3, Download, FileSpreadsheet, History, Info, LockKeyhole, Mail, MessageCircle, Mic, MicOff, Moon, Pause, Pencil, Play, Plus, RotateCcw, Search, Send, Settings2, ShieldCheck, Sparkles, Sun, Trash2, X } from "lucide-react";
 import { durationLabel, localDateKey, minutesBetween, shiftsCsv, thisWeekStart, type ActiveShift, type Shift } from "@/lib/time";
@@ -19,8 +21,6 @@ const STORAGE_KEY = "routehours:v1";
 type RecognitionResult = { results: ArrayLike<ArrayLike<{ transcript: string }>> };
 type Recognition = { lang: string; continuous: boolean; interimResults: boolean; onresult: ((event: RecognitionResult) => void) | null; onerror: ((event: { error: string }) => void) | null; onend: (() => void) | null; start: () => void; stop: () => void };
 type VoiceAction = { kind: "start" | "stop"; transcript: string };
-type GoogleTokenClient = { requestAccessToken: () => void };
-type GoogleWindow = Window & { google?: { accounts: { oauth2: { initTokenClient: (config: { client_id: string; scope: string; callback: (response: { access_token?: string; error?: string }) => void; error_callback?: (error: { type?: string }) => void }) => GoogleTokenClient } } } };
 type InstallPrompt = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> };
 type DictationLanguage = "auto" | "en" | "da" | "ar";
 type ThemeMode = "system" | "light" | "dark";
@@ -70,21 +70,11 @@ function download(name: string, content: string, type: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function normalizeClientId(value: string) {
-  const trimmed = value.trim();
-  try {
-    const parsed = JSON.parse(trimmed);
-    const fromJson = parsed?.web?.client_id || parsed?.client_id;
-    if (typeof fromJson === "string") return fromJson.trim();
-  } catch { /* A plain client ID is expected most of the time. */ }
-  return trimmed.replace(/^['"]|['"]$/g, "");
-}
-
-function validClientId(value: string) { return /^[\w-]+\.apps\.googleusercontent\.com$/.test(value); }
 function validEmail(value: string) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim()); }
 function cleanNoteDraft(value: string) { return value.split("\n").map(line => line.trim()).filter(line => line && !/^(Route timing|Support provided|Follow-up):$/i.test(line)).join("\n"); }
 
 export default function Home() {
+  const online = useOnlineStatus();
   const [loaded, setLoaded] = useState(false);
   const [workZone, setWorkZone] = useState(DEFAULT_ZONE);
   const [selectedWeek, setSelectedWeek] = useState(mondayOf(dateInZone(Date.now())));
@@ -189,6 +179,7 @@ export default function Home() {
     const inert = [...Array.from(document.querySelectorAll<HTMLElement>(".topbar,.main-grid,.mobile-dock")), ...dialogs.slice(0,-1)]; inert.forEach(el => el.inert = true);
     dialog.focus();
     function keys(event: KeyboardEvent) {
+      if (event.defaultPrevented) return;
       if (event.key === "Escape" && !storageError && !creatingSheet) { if (restorePreview) setRestorePreview(null); else if (voicePlanText !== null) setVoicePlanText(null); else if (installOpen) setInstallOpen(false); else if (settingsOpen) setSettingsOpen(false); else if (shareOpen) setShareOpen(false); else setEditing(null); }
       if (event.key !== "Tab") return;
       const items = Array.from(dialog!.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),textarea:not(:disabled),select:not(:disabled),summary,a[href]')).filter(el => el.getClientRects().length);
@@ -245,7 +236,7 @@ export default function Home() {
     const modals = document.querySelectorAll(".modal");
     const animations = Array.from(modals).map(modal => animate(modal, { opacity: [.7, 1], transform: ["translateY(24px)", "translateY(0)"] }, { duration: .3, ease: [0.16, 1, 0.3, 1] }));
     return () => animations.forEach(animation => animation.stop());
-  }, [settingsOpen, shareOpen, weeklyExportOpen, editing, installOpen]);
+  }, [settingsOpen, shareOpen, weeklyExportOpen, editing, installOpen, voicePlanText !== null]);
 
   useEffect(() => {
     if (!loaded) return;
@@ -573,8 +564,8 @@ export default function Home() {
     else { if (active) stopShift(); else setNotice("There is no active shift to stop."); }
     setVoiceAction(null);
   }
-  function openEdit(shift?: Shift) {
-    const value = shift || emptyShift();
+  function openEdit(shift?: Shift, selectedDate?: string) {
+    const value = shift || (selectedDate ? { id: crypto.randomUUID(), start: zonedInstant(selectedDate + "T07:00", workZone, true), end: zonedInstant(selectedDate + "T09:00", workZone, true), notes: [] } : emptyShift());
     setEditing(value); setEditStart(localInput(value.start)); setEditEnd(localInput(value.end)); setEditNotes(value.notes.join("\n")); setModalError("");
   }
   function saveEdit() {
@@ -637,8 +628,9 @@ export default function Home() {
     catch (e) { setSettingsSaved(false); setSettingsSaveError((e as Error).message); }
   }
   async function connectGoogle() {
+    if (!online) { setGoogleError("Go online to connect Google. Your settings stay saved here."); return; }
     setGoogleConnecting(true); setGoogleError("");
-    try { const account = await gmailToken(normalizeClientId(googleClientId) || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || ""); setGoogleAccount(account.email); }
+    try { const account = await connectGoogleAccount(normalizeClientId(googleClientId) || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || ""); setGoogleAccount(account.email); }
     catch(e) { setGoogleError((e as Error).message); } finally { setGoogleConnecting(false); }
   }
   function toggleTheme() {
@@ -654,39 +646,27 @@ export default function Home() {
     download(`routehours-${monthKey}${detailed ? "-detailed" : "-hours"}.csv`, shiftsCsv(shifts, detailed, workZone), "text/csv;charset=utf-8");
     setExportOpen(false);
   }
-  function exportGoogleSheet(share = false, report = shareReport) {
+  async function exportGoogleSheet(share = false, report = shareReport) {
     const clientId = normalizeClientId(googleClientId) || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
-    const google = (window as GoogleWindow).google;
     if (share && !validEmail(shareRecipient)) { setShareError("Enter a valid email address before sharing."); return; }
     if (!clientId) { setExportOpen(false); setShareOpen(false); setSettingsOpen(true); setNotice("Add and save your Google OAuth client ID in Settings first."); return; }
     if (!validClientId(clientId)) { setExportOpen(false); setShareOpen(false); setSettingsOpen(true); setNotice("Check the Google Web application client ID in Settings."); return; }
-    if (!google?.accounts?.oauth2) { setShareError("Google sign-in is still loading. Try again in a moment."); setNotice("Google sign-in is still loading. Try again in a moment."); return; }
     setExportOpen(false); setShareError(""); setSheetShareStatus(""); setCreatingSheet(true);
     if (!shareRetryId) setSheetUrl("");
-    const client = google.accounts.oauth2.initTokenClient({
-      client_id: clientId,
-      scope: "https://www.googleapis.com/auth/drive.file",
-      error_callback: error => { setCreatingSheet(false); const message = error.type === "popup_closed" ? "Google sign-in was closed before access was granted." : "Google sign-in could not open. Check the authorized JavaScript origin, then try again."; setShareError(message); setNotice(message); },
-      callback: async response => {
-        if (!response.access_token) { setCreatingSheet(false); const message = response.error || "Google access was not granted."; setShareError(message); setNotice(message); return; }
-        setCreatingSheet(true);
-        try {
-          const result = share && shareRetryId ? { id: shareRetryId, url: sheetUrl, complete: true } : await createGoogleSheet(response.access_token, shifts, report);
-          setSheetUrl(result.url);
-          if (!result.complete) { setShareError("The Sheet was created, but its hours could not be added. Open it below and try the CSV export."); setNotice("Sheet created without hours. Open the link below."); return; }
-          if (share) {
-            setShareRetryId(result.id);
-            await shareGoogleSheet(response.access_token, result.id, shareRecipient, shareRole);
-            setSheetShareStatus(`Google sent a sharing notification to ${shareRecipient.trim()}.`);
-            setShareRetryId(""); setShareOpen(false);
-            setNotice("Google Sheet created and shared by email.");
-          } else { setShareRetryId(""); setNotice("Google Sheet created. Open it from the link below."); }
-        } catch (error) { const message = error instanceof Error ? error.message : "Could not create or share Google Sheet."; setShareError(message); setNotice(message); }
-        finally { setCreatingSheet(false); }
-      },
-    });
-    try { client.requestAccessToken(); }
-    catch { setCreatingSheet(false); const message = "Google sign-in could not start. Check your OAuth client ID and authorized website origin."; setShareError(message); setNotice(message); }
+    try {
+      const { token } = await requestGoogleToken(clientId, GOOGLE_FILE_SCOPE);
+      const result = share && shareRetryId ? { id: shareRetryId, url: sheetUrl, complete: true } : await createGoogleSheet(token, shifts, report);
+      setSheetUrl(result.url);
+      if (!result.complete) { setShareError("The Sheet was created, but its hours could not be added. Open it below and try the CSV export."); setNotice("Sheet created without hours. Open the link below."); return; }
+      if (share) {
+        setShareRetryId(result.id);
+        await shareGoogleSheet(token, result.id, shareRecipient, shareRole);
+        setSheetShareStatus(`Google sent a sharing notification to ${shareRecipient.trim()}.`);
+        setShareRetryId(""); setShareOpen(false);
+        setNotice("Google Sheet created and shared by email.");
+      } else { setShareRetryId(""); setNotice("Google Sheet created. Open it from the link below."); }
+    } catch (error) { const message = error instanceof Error ? error.message : "Could not create or share Google Sheet."; setShareError(message); setNotice(message); }
+    finally { setCreatingSheet(false); }
   }
   async function openInstall() {
     const prompt = installPrompt.current;
@@ -735,6 +715,7 @@ export default function Home() {
       <div className="top-actions"><span className="today-pill"><CalendarDays size={15}/>{new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short" }).format(new Date(now))}</span>{!installed && <button className="install-top" onClick={() => void openInstall()}><Download size={16}/> Install</button>}<button className="icon-btn theme-button" aria-label={isDarkTheme ? "Switch to light mode" : "Switch to dark mode"} title={isDarkTheme ? "Switch to light mode" : "Switch to dark mode"} onClick={toggleTheme}>{isDarkTheme ? <Sun size={19}/> : <Moon size={19}/>}</button><button className="icon-btn" aria-label="Settings" onClick={() => setSettingsOpen(true)}><Settings2 size={19}/></button></div>
     </header>
 
+    <OfflineStatus online={online}/>
     <main className="container main-grid" data-view={view}>
       {view === "today" ? <div className="today-view">
         <div className="page-heading"><h1>{active ? "Shift in progress" : savedShift ? "Shift saved" : "Ready when you are"}</h1><p className="page-date">{new Intl.DateTimeFormat("en-GB",{weekday:"long",day:"numeric",month:"long",timeZone:workZone}).format(new Date(now))}</p></div>
@@ -751,7 +732,7 @@ export default function Home() {
         <button className="week-peek" onClick={() => {setSelectedWeek(currentMonday);setView("history");}}><span><span className="week-peek-label">This week</span><strong>{durationLabel(weekMinutes)}</strong></span><span>{weeklyGoalHours ? `of ${weeklyGoalHours}h goal` : `${weekShifts.length} shifts`}<ArrowRight size={18}/></span></button>
         <details id="help-panel" className="help-panel"><summary><span><Sparkles size={18}/> Ask or log with your voice</span><Plus size={17}/></summary><section id="assistant" className="assistant-card surface" aria-label="Ask RouteHours"><div className="assistant-heading"><span className="assistant-icon"><MessageCircle size={22}/></span><div><h2>A little help.</h2><p>Ask by voice or type. Get help with the app or with structuring a note.</p></div></div><details className="assistant-help"><summary>Suggested questions</summary><div className="assistant-prompts"><button onClick={() => void askAssistant("How do I export and email my hours?")}>Export & email</button><button onClick={() => void askAssistant("How should I structure a useful shift note?")}>Structure a note</button><button onClick={() => void askAssistant("How do I set up Google Sheets?")}>Set up Sheets</button></div></details><form className="assistant-form" onSubmit={e => { e.preventDefault(); void askAssistant(); }}><input value={assistantQuestion} onChange={e => setAssistantQuestion(e.target.value)} maxLength={1200} placeholder={voiceTarget.current === "assistant" && (recording || listening) ? "Listening to your question…" : "Ask a question or describe your hours…"} aria-label="Question for RouteHours"/><button type="button" className={`assistant-mic ${voiceTarget.current === "assistant" && (recording || listening) ? "is-active" : ""}`} aria-label={voiceTarget.current === "assistant" && (recording || listening) ? "Stop question recording" : "Dictate a question"} aria-pressed={voiceTarget.current === "assistant" && (recording || listening)} disabled={transcribing || micStarting || (recording || listening) && voiceTarget.current !== "assistant"} onClick={toggleAssistantMic}>{voiceTarget.current === "assistant" && (recording || listening) ? <MicOff size={18}/> : <Mic size={18}/>}</button><button type="submit" className="assistant-send" disabled={!assistantQuestion.trim() || assistantBusy} aria-label="Ask question"><Send size={18}/></button></form><button className="text-action" disabled={!assistantQuestion.trim()} onClick={() => setVoicePlanText(assistantQuestion)}><Sparkles size={15}/> Turn these words into hours</button>{voiceStatus("assistant")}{(assistantOpen || assistantBusy) && <div className="assistant-reply" aria-live="polite"><div><Sparkles size={17}/><strong>RouteHours guide</strong>{assistantBusy && <span className="mini-spinner"/>}</div>{assistantBusy ? <p>Thinking through your question…</p> : assistantError ? <p className="assistant-error">{assistantError} {(!geminiApiKey && !accessCode) && <button onClick={() => setSettingsOpen(true)}>Open Settings</button>}</p> : <p>{assistantAnswer}</p>}</div>}<small>For note help, your active note draft is sent to Gemini with your question. Leave out identifying details.</small></section></details>
         {!active && <button className="text-action add-past" onClick={() => openEdit()}><Plus size={16}/> Add a past shift</button>}
-      </div> : <div className="week-layout"><WeekView week={selectedWeek} onWeek={setSelectedWeek} shifts={shifts} profile={payroll} details={dayDetails} zone={workZone} onReview={() => setWeeklyExportOpen(true)} onEdit={openEdit} onAdd={() => openEdit()}/><details className="all-history"><summary>All shifts & exports <History size={17}/></summary><section id="history" className="history-section surface"><div className="section-heading history-heading"><div><h2>Shift history</h2></div><div className="history-actions"><button className="secondary-btn" onClick={() => openEdit()}><Plus size={17}/> Add manually</button><div className="export-wrap"><button className="primary-outline" disabled={creatingSheet} onClick={() => setExportOpen(!exportOpen)}><ArrowDownToLine size={17}/> {creatingSheet ? "Creating…" : "Export"} <ChevronDown size={15}/></button>{exportOpen && <div className="export-menu"><button onClick={() => { setWeeklyExportOpen(true); setExportOpen(false); }}><Mail size={18}/><span><strong>Weekly timesheet & email</strong><small>Preview, Excel file or Google Sheets</small></span></button><button onClick={() => exportCsv(false)}><FileSpreadsheet size={18}/><span><strong>Download hours CSV</strong><small>Import into Google Sheets anytime</small></span></button><button onClick={() => exportCsv(true)}><FileSpreadsheet size={18}/><span><strong>Detailed log CSV</strong><small>Includes notes and AI summaries</small></span></button><button onClick={() => { void exportBackup(); setExportOpen(false); }}><ArrowDownToLine size={18}/><span><strong>Backup data</strong><small>Save a copy you can restore later</small></span></button></div>}</div></div></div>
+      </div> : <div className="week-layout"><WeekView week={selectedWeek} onWeek={setSelectedWeek} shifts={shifts} profile={payroll} details={dayDetails} zone={workZone} onReview={() => setWeeklyExportOpen(true)} onEdit={openEdit} onAdd={() => openEdit(undefined, selectedWeek === currentMonday ? todayKey : selectedWeek)}/><details className="all-history"><summary>All shifts & exports <History size={17}/></summary><section id="history" className="history-section surface"><div className="section-heading history-heading"><div><h2>Shift history</h2></div><div className="history-actions"><button className="secondary-btn" onClick={() => openEdit()}><Plus size={17}/> Add manually</button><div className="export-wrap"><button className="primary-outline" disabled={creatingSheet} onClick={() => setExportOpen(!exportOpen)}><ArrowDownToLine size={17}/> {creatingSheet ? "Creating…" : "Export"} <ChevronDown size={15}/></button>{exportOpen && <div className="export-menu"><button onClick={() => { setWeeklyExportOpen(true); setExportOpen(false); }}><Mail size={18}/><span><strong>Weekly timesheet & email</strong><small>Preview, Excel file or Google Sheets</small></span></button><button onClick={() => exportCsv(false)}><FileSpreadsheet size={18}/><span><strong>Download hours CSV</strong><small>Import into Google Sheets anytime</small></span></button><button onClick={() => exportCsv(true)}><FileSpreadsheet size={18}/><span><strong>Detailed log CSV</strong><small>Includes notes and AI summaries</small></span></button><button onClick={() => { void exportBackup(); setExportOpen(false); }}><ArrowDownToLine size={18}/><span><strong>Backup data</strong><small>Save a copy you can restore later</small></span></button></div>}</div></div></div>
         <div className="history-toolbar"><div className="history-filters" role="group" aria-label="Filter shifts">{([ ["all", "All shifts"], ["week", "This week"], ["month", "This month"] ] as const).map(([value, label]) => <button key={value} className={historyRange === value ? "selected" : ""} aria-pressed={historyRange === value} onClick={() => setHistoryRange(value)}>{label}</button>)}</div><label className="history-search"><Search size={16}/><input value={historyQuery} onChange={e => setHistoryQuery(e.target.value)} placeholder="Search dates or notes" aria-label="Search shifts"/></label></div>
         {shifts.length > 0 && <p className="history-count">Showing {filteredShifts.length} of {shifts.length} shifts · Weekly export lets you choose a week. CSV includes all shifts.</p>}
         {sorted.length === 0 ? <div className="empty-state"><div className="empty-illustration"><Clock3 size={32}/></div><h3>Your shifts will show up here</h3><p>Start the timer for your next bus ride, or add a past shift manually.</p></div> : filteredShifts.length === 0 ? <div className="empty-state filter-empty"><div className="empty-illustration"><Search size={29}/></div><h3>No matching shifts</h3><p>Try another date range or search term.</p><button onClick={() => { setHistoryRange("all"); setHistoryQuery(""); }}>Clear filters</button></div> : <div className="shift-list">{filteredShifts.map(shift => { const open = expanded === shift.id; return <div className={`shift-item ${open ? "expanded" : ""}`} key={shift.id}><button className="shift-summary" onClick={() => setExpanded(open ? null : shift.id)} aria-expanded={open}><span className="shift-date-icon"><CalendarDays size={18}/></span><span className="shift-main"><strong>{formatDay(shift.start)}</strong><small>{formatTime(shift.start)} <ArrowRight size={13}/> {formatTime(shift.end)}</small></span><span className="shift-duration">{durationLabel(minutesBetween(shift.start, shift.end))}</span><ChevronDown className="shift-chevron" size={18}/></button>{open && <div className="shift-detail"><div className="detail-grid"><div><span className="detail-label">STARTED</span><strong>{new Date(shift.start).toLocaleString("en-GB", { timeZone: workZone })}</strong></div><div><span className="detail-label">FINISHED</span><strong>{new Date(shift.end).toLocaleString("en-GB", { timeZone: workZone })}</strong></div><div><span className="detail-label">DECIMAL HOURS</span><strong>{(minutesBetween(shift.start, shift.end) / 60).toFixed(2)} h</strong></div></div><div className="detail-notes"><span className="detail-label">YOUR NOTES</span>{shift.notes.length ? shift.notes.map((note, i) => <p key={i}>• {note}</p>) : <p className="muted">No notes recorded.</p>}</div>{shift.summaryStatus === "pending" && <div className="ai-panel"><Sparkles size={18}/><span>Creating your summary…</span><span className="mini-spinner"/></div>}{shift.summary && <div className="summary-panel"><div className="summary-title"><Sparkles size={17}/> AI SHIFT SUMMARY</div><p>{shift.summary.overview}</p>{([ ["Activities", shift.summary.activities], ["Notable moments", shift.summary.notable], ["Follow-up", shift.summary.followUp] ] as const).map(([title, values]) => values.length > 0 && <div className="summary-group" key={title}><strong>{title}</strong><ul>{values.map((value, i) => <li key={i}>{value}</li>)}</ul></div>)}</div>}{shift.summaryStatus === "error" && shift.summaryError && <p className="summary-error" role="alert">{shift.summaryError}</p>}{(!shift.summary || shift.summaryStatus === "error") && <button className="text-action" onClick={() => retrySummary(shift)}><Sparkles size={16}/>{shift.summaryStatus === "error" ? "Retry AI summary" : "Generate AI summary"}</button>}<div className="shift-controls"><button onClick={() => void copyShiftHours(shift)}><Clipboard size={15}/> Copy hours</button><button onClick={() => openEdit(shift)}><Pencil size={15}/> Edit shift</button><button className="danger" onClick={() => deleteShift(shift.id)}><Trash2 size={15}/> Delete</button></div></div>}</div>; })}</div>}
@@ -764,9 +745,9 @@ export default function Home() {
     {storageError && <div className="modal-backdrop"><div className="modal" role="alertdialog" aria-modal="true" aria-label="Saving paused"><h2>Let's keep your hours safe.</h2><p>{storageError}</p><button className="modal-submit" onClick={() => void exportBackup()}>Download this screen's records</button><button className="secondary-btn" onClick={() => location.reload()}>Reload latest saved version</button></div></div>}
     {restorePreview && <div className="modal-backdrop"><div className="modal" role="dialog" aria-modal="true" aria-label="Restore preview"><div className="modal-head"><h2>Restore your hours</h2><button className="icon-btn" aria-label="Cancel restore" onClick={() => setRestorePreview(null)}><X size={20}/></button></div><p>{restorePreview.shifts.length} shifts in this file. You currently have {shifts.length}.</p><p><b>Merge</b> adds missing shifts and keeps current entries when IDs or times match. <b>Replace</b> uses the backup's shifts, timer and profile. Email records are merged in both cases.</p><button className="modal-submit" onClick={() => void applyRestore(true)}>Merge with my records</button><button className="secondary-btn" onClick={() => void applyRestore(false)}>Replace from backup</button><button className="text-action" onClick={() => void exportBackup()}>Back up current records first</button></div></div>}
 
-    {notice && !weeklyExportOpen && <div className="toast" role="status"><Info size={17}/><span>{notice}</span><button aria-label="Dismiss notification" onClick={() => setNotice("")}><X size={15}/></button></div>}
+    {notice && !weeklyExportOpen && voicePlanText === null && <div className="toast" role="status"><Info size={17}/><span>{notice}</span><button aria-label="Dismiss notification" onClick={() => setNotice("")}><X size={15}/></button></div>}
 
-    {editing && <div className="modal-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) setEditing(null); }}><div className="modal" role="dialog" aria-modal="true" aria-label="Edit shift"><div className="modal-head"><div><h2>{shifts.some(s => s.id === editing.id) ? "Edit shift" : "Add a shift"}</h2></div><button className="icon-btn" aria-label="Close" onClick={() => setEditing(null)}><X size={19}/></button></div><label>Start date & time<input type="datetime-local" value={editStart} onChange={e => setEditStart(e.target.value)}/></label><label>End date & time<input type="datetime-local" value={editEnd} onChange={e => setEditEnd(e.target.value)}/></label><label>Notes <small>One note per line. Avoid identifying children.</small><textarea value={editNotes} onChange={e => setEditNotes(e.target.value)} rows={5}/></label>{modalError && <p className="form-error">{modalError}</p>}<button className="modal-submit" onClick={saveEdit}>Save shift <ArrowRight size={17}/></button></div></div>}
+    {editing && <div className="modal-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) setEditing(null); }}><div className="modal" role="dialog" aria-modal="true" aria-label="Edit shift"><div className="modal-head"><div><h2>{shifts.some(s => s.id === editing.id) ? "Edit shift" : "Add a shift"}</h2></div><button className="icon-btn" aria-label="Close" onClick={() => setEditing(null)}><X size={19}/></button></div><p className="report-hint">{shifts.some(s => s.id === editing.id) ? "Review your recorded times." : "These are suggested times. Check the date and both times before saving."} Times in {workZone}.</p><label>Start date & time<input type="datetime-local" value={editStart} onChange={e => setEditStart(e.target.value)}/></label><label>End date & time<input type="datetime-local" value={editEnd} onChange={e => setEditEnd(e.target.value)}/></label><label>Notes <small>One note per line. Avoid identifying children.</small><textarea value={editNotes} onChange={e => setEditNotes(e.target.value)} rows={5}/></label>{modalError && <p className="form-error">{modalError}</p>}<button className="modal-submit" onClick={saveEdit}>Save shift <ArrowRight size={17}/></button></div></div>}
 
     {weeklyExportOpen && <WeeklyExport initialWeek={selectedWeek} zone={workZone} shifts={shifts} active={Boolean(active)} profile={payroll} onProfile={setPayroll} details={dayDetails} onDetails={setDayDetails} onClose={closeWeeklyExport} clientId={normalizeClientId(googleClientId) || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || ""} onSettings={() => { setWeeklyExportOpen(false); setSettingsOpen(true); }} onGoogle={(report, email) => { setShareReport(report); setShareRetryId(""); setShareError(""); setWeeklyExportOpen(false); if (email) { setShareRecipient(payroll.email); setShareOpen(true); } else exportGoogleSheet(false, report); }}/> }
     {shareOpen && <div className="modal-backdrop" onMouseDown={e => { if (e.target === e.currentTarget && !creatingSheet) setShareOpen(false); }}><div className="modal share-modal" role="dialog" aria-modal="true" aria-label="Email Google Sheet"><div className="modal-head"><div><h2>{shareRetryId ? "Finish sharing" : "Create & email"}</h2></div><button className="icon-btn" aria-label="Close" disabled={creatingSheet} onClick={() => setShareOpen(false)}><X size={19}/></button></div><p>{shareRetryId ? "Your Sheet was created. Retry sharing this same file." : "Create a new hours Sheet in your Google Drive and let Google email access to a recipient."}</p><label>Recipient email<input type="email" value={shareRecipient} onChange={e => { setShareRecipient(e.target.value); setShareError(""); }} placeholder="name@example.com" autoComplete="email"/></label><label>Access<select value={shareRole} onChange={e => setShareRole(e.target.value as "reader" | "writer")}><option value="reader">Viewer · can read</option><option value="writer">Editor · can change the Sheet</option></select></label><p className="share-privacy">{shareReport ? `${shareReport.title} · ${shareReport.profile.name || "No name entered"}. Includes times, absence entries, extra remarks${shareReport.includesNotes ? ", shift notes and AI summaries" : ""}.` : "Includes saved hours and dates."} Check the email before sending.</p>{shareError && <p className="form-error" role="alert">{shareError}</p>}{shareRetryId && sheetUrl && <a className="share-existing" href={sheetUrl} target="_blank" rel="noopener noreferrer">Open the created Sheet <ArrowRight size={15}/></a>}<button className="modal-submit" disabled={creatingSheet || !validEmail(shareRecipient)} onClick={() => exportGoogleSheet(true)}>{creatingSheet ? "Working with Google…" : shareRetryId ? "Retry sharing" : "Create & send access"} <Mail size={17}/></button></div></div>}
@@ -793,14 +774,7 @@ export default function Home() {
         {groqConnection && <p className={`connection-result ${groqConnection.ok ? "success" : "error"}`} role="status">{groqConnection.ok ? <Check size={17}/> : <X size={17}/>} {groqConnection.message}</p>}
         <p className="privacy-note"><LockKeyhole size={16}/>With a Groq key saved, the mic records up to one minute and sends that audio to Groq when you finish. RouteHours keeps the text, not the audio. Speak only your own notes and avoid identifying children.</p>
       </div>
-      <div className="setting-block">
-        <div className="setting-title"><span className="setting-icon"><FileSpreadsheet size={19}/></span><div><strong>Google Sheets & Gmail</strong><p>One Web client ID for Sheets and sending attachments.</p></div></div>
-        <button className="modal-submit" disabled={googleConnecting} onClick={() => void connectGoogle()}>{googleConnecting ? "Connecting…" : googleAccount ? "Change Google account" : "Connect Google"}<Mail size={17}/></button>{googleAccount && <p className="connection-result success">Connected as {googleAccount}. You choose the sending account again when sending.</p>}{googleError && <p className="form-error">{googleError}</p>}<details className="advanced-ai"><summary>Google setup & advanced client ID</summary><label className="access-label">OAuth client ID <small>Paste the <b>Web application</b> client ID from <a href="https://console.cloud.google.com/auth/clients" target="_blank" rel="noopener noreferrer">Google Cloud clients</a>. You can also paste its downloaded JSON. Do not paste the client secret.</small><input type="text" value={googleClientId} onChange={e => { setGoogleClientId(e.target.value); setSettingsSaved(false); setSettingsSaveError(""); }} placeholder="...apps.googleusercontent.com" autoComplete="off" autoCapitalize="none" spellCheck={false}/></label>
-        {googleClientId && <p className={`id-status ${validClientId(normalizeClientId(googleClientId)) ? "valid" : "invalid"}`}>{validClientId(normalizeClientId(googleClientId)) ? "Client ID format looks right. Save it below, then use Export." : "This does not look like a Web application client ID yet."}</p>}
-        <p className="origin-help">For direct email, <a href="https://console.cloud.google.com/apis/library/gmail.googleapis.com" target="_blank" rel="noopener noreferrer">enable Gmail API</a> in the same project and add <code>https://www.googleapis.com/auth/gmail.send</code> in <a href="https://console.cloud.google.com/auth/scopes" target="_blank" rel="noopener noreferrer">Google Data Access</a>. You review the recipient, message and attachment before sending.</p><button className="google-save" onClick={saveSettings}><Check size={16}/> Save Google client ID</button>
-        <p className="origin-help">In that OAuth client, add <code>{window.location.origin}</code> under <b>Authorized JavaScript origins</b>. Enable both the <a href="https://console.cloud.google.com/apis/library/sheets.googleapis.com" target="_blank" rel="noopener noreferrer">Google Sheets API</a> and <a href="https://console.cloud.google.com/apis/library/drive.googleapis.com" target="_blank" rel="noopener noreferrer">Google Drive API</a>. Add your Google account as a test user if the app is in testing.</p>
-        <p className="origin-help">An old Web client ID can work when this website origin and both APIs are configured in its Google Cloud project. After saving, use <b>Week → Review & send</b> to create or email a Sheet.</p></details>
-      </div>
+      <GoogleSetup clientId={googleClientId} onChange={value => {setGoogleClientId(value);setGoogleAccount("");setGoogleError("");setSettingsSaved(false);setSettingsSaveError("");}} onSave={() => void saveSettings()} connectedEmail={googleAccount} onConnect={() => void connectGoogle()} connecting={googleConnecting} online={online} error={googleError}/>
       <div className="setting-block"><div className="setting-title"><span className="setting-icon"><RotateCcw size={19}/></span><div><strong>Restore a backup</strong><p>Preview a backup, then merge or replace your hours.</p></div></div><input ref={importing} type="file" accept="application/json,.json" className="sr-only" onChange={e => void importBackup(e.target.files?.[0])}/><button className="secondary-btn restore-btn" onClick={() => importing.current?.click()}>Choose backup file <ArrowRight size={16}/></button></div>
       <div className="settings-save-bar"><button className="modal-submit" onClick={saveSettings}><Check size={17}/> Save settings</button>{settingsSaved && <span className="settings-saved" role="status"><Check size={15}/> Saved on this device.</span>}{settingsSaveError && <span className="settings-save-error" role="alert">{settingsSaveError}</span>}</div>
     </div></div>}

@@ -29,5 +29,7 @@ test("Gmail accepts only confirmed sends and never automatically retries ambiguo
     assert.equal(requests, 2);
     globalThis.fetch = async () => new Response(JSON.stringify({ error: { message: "Gmail API has not been used or is disabled" } }), { status: 403 });
     await assert.rejects(sendGmailMessage("fake-token", "fake-payload"), /Enable the Gmail API/);
+    globalThis.fetch = async () => new Response("{}", { status: 401 });
+    await assert.rejects(sendGmailMessage("expired-token", "fake-payload"), /session expired or was revoked.*Nothing was sent/);
   } finally { globalThis.fetch = original; }
 });
