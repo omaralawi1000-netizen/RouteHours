@@ -1,3 +1,5 @@
+import { cachedGoogleAccount, savedGoogleEmail, rememberGoogleAccount, clearGoogleSession, type GoogleService } from './google-session.ts';
+
 export const GOOGLE_EMAIL_SCOPE = "https://www.googleapis.com/auth/userinfo.email";
 export const GOOGLE_FILE_SCOPE = "https://www.googleapis.com/auth/drive.file";
 
@@ -10,7 +12,7 @@ type TokenConfig = {
   error_callback: (error: { type?: string }) => void;
 };
 type GoogleOAuth = {
-  initTokenClient: (config: TokenConfig) => { requestAccessToken: (options: { prompt: string }) => void };
+  initTokenClient: (config: TokenConfig) => { requestAccessToken: (options: { prompt: string; login_hint?: string }) => void };
   hasGrantedAllScopes?: (response: GoogleTokenResponse, firstScope: string, ...restScopes: string[]) => boolean;
 };
 type GoogleBrowser = Window & { google?: { accounts?: { oauth2?: GoogleOAuth } } };
@@ -51,7 +53,7 @@ function hasScopes(google: GoogleOAuth, response: GoogleTokenResponse, scopes: s
 }
 
 /** Call directly from a click handler. Waiting for scripts before requesting a popup loses the user gesture. */
-export function requestGoogleToken(clientId: string, scopes: string | string[], options: { signal?: AbortSignal; timeoutMs?: number; prompt?: string } = {}): Promise<GoogleToken> {
+export function requestGoogleToken(clientId: string, scopes: string | string[], options: { signal?: AbortSignal; timeoutMs?: number; prompt?: string; loginHint?: string } = {}): Promise<GoogleToken> {
   return new Promise((resolve, reject) => {
     const id = normalizeGoogleClientId(clientId), google = oauth();
     if (!validGoogleClientId(id)) { reject(new Error("Add and save a Google Web application client ID in Settings first. You can paste the client ID or its downloaded Web client JSON.")); return; }
@@ -89,14 +91,14 @@ export function requestGoogleToken(clientId: string, scopes: string | string[], 
         },
         error_callback: error => finish(popupError(error.type)),
       });
-      client.requestAccessToken({ prompt: options.prompt ?? "select_account" });
+      client.requestAccessToken({ prompt: options.prompt ?? "select_account", ...(options.loginHint ? {login_hint:options.loginHint} : {}) });
     } catch { finish(new Error("Google sign-in could not start. Check the Web client ID, allow pop-ups, and try again.")); }
   });
 }
 
-export async function readGoogleEmail(token: string): Promise<string> {
+export async function readGoogleEmail(token: string, signal?: AbortSignal): Promise<string> {
   let response: Response;
-  try { response = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15000) }); }
+  try { response = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", { headers: { authorization: `Bearer ${token}` }, signal: signal ? AbortSignal.any([signal,AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000) }); }
   catch { throw new Error("Could not reach Google to identify your account. Check your connection and try again."); }
   if (response.status === 401) throw new Error("Your Google session expired. Connect again.");
   if (response.status === 403) throw new Error("Google did not allow email-address access. Connect again and approve account email access.");
@@ -104,7 +106,18 @@ export async function readGoogleEmail(token: string): Promise<string> {
   if (!response.ok || typeof account?.email !== "string" || !/^[^\s<>@,;]+@[^\s<>@,;]+\.[^\s<>@,;]+$/.test(account.email)) throw new Error("Google did not return a valid account email address. Connect again and allow email-address access.");
   return account.email;
 }
-export async function googleAccount(clientId: string): Promise<GoogleAccount> {
-  const grant = await requestGoogleToken(clientId, GOOGLE_EMAIL_SCOPE);
-  return { ...grant, email: await readGoogleEmail(grant.token) };
+export async function authorizeGoogleAccount(clientId: string, service: GoogleService, scopes: string[], options: {forceAccountChoice?:boolean;signal?:AbortSignal} = {}): Promise<GoogleAccount> {
+  const id = normalizeGoogleClientId(clientId);
+  if(options.signal?.aborted) throw new Error('Google connection cancelled.');
+  if(!options.forceAccountChoice) {const cached=cachedGoogleAccount(id,service);if(cached)return cached;}
+  else clearGoogleSession(id,service);
+  const email = options.forceAccountChoice ? '' : savedGoogleEmail(id,service);
+  const grant = await requestGoogleToken(id,scopes,{signal:options.signal,prompt:email?'':'select_account',loginHint:email||undefined});
+  const account = {...grant,email:await readGoogleEmail(grant.token,options.signal)};
+  if(options.signal?.aborted) throw new Error('Google connection cancelled.');
+  rememberGoogleAccount(id,service,account);
+  return account;
+}
+export function googleAccount(clientId: string, options: {forceAccountChoice?:boolean} = {}): Promise<GoogleAccount> {
+  return authorizeGoogleAccount(clientId,'google',[GOOGLE_EMAIL_SCOPE],options);
 }

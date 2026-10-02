@@ -1,5 +1,5 @@
-const CACHE = "routehours-shell-v8";
-const SHELL = ["/", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
+const CACHE = "routehours-shell-v9";
+const SHELL = ["/", "/manifest.webmanifest", "/icon-192-v3.png", "/icon-512-v3.png", "/icon-maskable-v3.png", "/apple-icon-v3.png"];
 
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting()));

@@ -1,4 +1,4 @@
-import { GOOGLE_EMAIL_SCOPE, readGoogleEmail, requestGoogleToken, type GoogleAccount } from "./google-auth.ts";
+import { GOOGLE_EMAIL_SCOPE, authorizeGoogleAccount, type GoogleAccount } from "./google-auth.ts";
 
 export const GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.send";
 export function validRecipient(value: string) { return /^[^\s<>@,;]+@[^\s<>@,;]+\.[^\s<>@,;]+$/.test(value.trim()) && !/[\r\n]/.test(value); }
@@ -36,10 +36,9 @@ export async function gmailMessage(to: string, subject: string, message: string,
   return encoded(mime).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
 }
 
-export async function gmailToken(clientId: string): Promise<GoogleAccount> {
+export async function gmailToken(clientId: string, options: {forceAccountChoice?:boolean;signal?:AbortSignal} = {}): Promise<GoogleAccount> {
   try {
-    const grant = await requestGoogleToken(clientId, [GMAIL_SCOPE, GOOGLE_EMAIL_SCOPE]);
-    return { ...grant, email: await readGoogleEmail(grant.token) };
+    return await authorizeGoogleAccount(clientId,'gmail',[GMAIL_SCOPE, GOOGLE_EMAIL_SCOPE],options);
   } catch (error) { throw new Error(`${error instanceof Error ? error.message : "Google could not authorize Gmail."} Nothing was sent.`); }
 }
 

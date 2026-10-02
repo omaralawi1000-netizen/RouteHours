@@ -7,6 +7,8 @@ import { saveSubmission, beginSubmission, allSubmissions, reportFingerprint, dow
 import { shiftWarnings, dateInZone } from "@/lib/ledger";
 import { gmailMessage, gmailToken, sendGmailMessage, validRecipient } from "@/lib/gmail";
 import { useOnlineStatus } from "./offline-status";
+import { useGoogleSession } from "./use-google-session";
+import { clearGoogleSession } from "@/lib/google-session";
 import { useSheetDismiss } from "./use-sheet-dismiss";
 
 type Props = { initialWeek: string; zone: string; shifts: Shift[]; active: boolean; profile: PayrollProfile; onProfile: (p: PayrollProfile) => void; details: DayDetails; onDetails: (d: DayDetails) => void; onClose: () => void; onGoogle: (report: WeeklyReport, email: boolean) => void; clientId: string; onSettings: () => void };
@@ -19,11 +21,13 @@ export default function WeeklyExport({ initialWeek, zone, shifts, active, profil
   const [historyReady, setHistoryReady] = useState(false);
   const [records, setRecords] = useState<Submission[]>([]);
   const [reviewed, setReviewed] = useState<Submission | null>(null);
-  const [account, setAccount] = useState<{ token: string; email: string; expires: number } | null>(null);
+  const {account:savedAccount,savedEmail}=useGoogleSession(clientId,"gmail");
+  const authRequest=useRef<AbortController|null>(null);
   const [connecting, setConnecting] = useState(false);
+  const account=connecting?null:savedAccount;
   useEffect(() => { const read = () => { void allSubmissions().then(value => { setRecords(value); setHistoryReady(true); }).catch(() => setGmailError("Saved email history could not be loaded. Reload before sending.")); }; read(); window.addEventListener("routehours:submissions",read); return () => window.removeEventListener("routehours:submissions",read); }, []);
   useEffect(() => { setSubjectEdit(null); setMessageEdit(null); setReviewed(null); setStep("review"); setSent(null); setGmailError(""); }, [week]);
-  useEffect(() => { setAccount(null); }, [clientId]);
+  useEffect(() => {setConnecting(false);return () => {authRequest.current?.abort();};},[clientId]);
   const [status, setStatus] = useState("");
   const [fileError, setFileError] = useState("");
   const [retry, setRetry] = useState(0);
@@ -88,15 +92,17 @@ export default function WeeklyExport({ initialWeek, zone, shifts, active, profil
     try { await navigator.share({ files: [file], title: subject, text: message }); setStatus("Opened the share menu. Finish sending in your chosen app."); }
     catch (error) { setStatus((error as Error).name === "AbortError" ? "Sharing cancelled. Your file is still ready." : "Sharing could not open. Use Download or Send with Gmail instead."); }
   }
-  async function connectAccount() {
+  async function connectAccount(changeAccount=false) {
     if (!online) { setGmailError("Go online to connect Gmail. Your file and message are still here."); return; }
-    setAccount(null); setConnecting(true); setGmailError("");
-    try { const next = await gmailToken(clientId); setAccount(next); }
-    catch(e) { setGmailError((e as Error).message); } finally { setConnecting(false); }
+    if(connecting)return;
+    const controller=new AbortController();authRequest.current?.abort();authRequest.current=controller;
+    setConnecting(true); setGmailError("");
+    try { await gmailToken(clientId,{forceAccountChoice:changeAccount,signal:controller.signal}); }
+    catch(e) { if(!controller.signal.aborted)setGmailError((e as Error).message); } finally { if(authRequest.current===controller&&!controller.signal.aborted)setConnecting(false); }
   }
   async function sendEmail() {
     if (!file || sendingRef.current || connecting || sent || uncertain || !validRecipient(profile.email) || !subject.trim() || !account || !historyReady || !online) return;
-    if (account.expires < Date.now()) { setAccount(null); setGmailError("Your Google session expired. Connect again before sending."); return; }
+    if (account.expires < Date.now()) { clearGoogleSession(clientId,"gmail"); setGmailError("Your Google session expired. Your sender is saved; continue with Gmail to renew access."); return; }
     if (!reviewed || reviewed.fingerprint !== attachmentKey) { setStep("review"); setGmailError("The report changed. Review the updated file before sending."); return; }
     sendingRef.current = true; setSending(true); setGmailError("");
     let record: Submission = { ...reviewed, recipient: profile.email.trim(), subject, message, sender: account.email, createdAt: new Date().toISOString(), status: "sending" };
@@ -115,6 +121,7 @@ export default function WeeklyExport({ initialWeek, zone, shifts, active, profil
       await saveSubmission(record); setStatus("");
     } catch(error) {
       const message = error instanceof Error ? error.message : "Gmail could not send this email.";
+      if(/session expired|revoked/.test(message))clearGoogleSession(clientId,"gmail");
       if (confirmed) { setStatus("Gmail confirmed sending, but the receipt could not be saved. Do not resend. Keep a copy of your file and check Gmail Sent."); }
       else {
         if (attempted) await saveSubmission({ ...record, status: /Nothing was sent|Gmail rejected/i.test(message) ? "reviewed" : "uncertain" }).catch(() => {});
@@ -147,7 +154,7 @@ export default function WeeklyExport({ initialWeek, zone, shifts, active, profil
         <details className="report-details"><summary>Absence & extra remarks</summary><p>Syg = sick · Fri = day off. Leave SH blank unless your employer explains it. These manual remarks are included separately from shift notes.</p>{report.remarks.map(day => <div className="report-day-editor" key={day.date}><strong>{day.day} · {displayDate(day.date)}</strong><div className="report-categories">{([ ["syg", "Syg"], ["fri", "Fri"], ["sh", "SH"], ["andet", "Andet"] ] as const).map(([key, label]) => <label key={key}>{label}<input aria-label={`${day.day} ${label}`} value={details[day.date]?.[key] || ""} maxLength={40} onChange={e => updateDay(day.date, key, e.target.value)}/></label>)}</div><label>Extra remarks<textarea maxLength={2000} value={details[day.date]?.remarks || ""} onChange={e => updateDay(day.date, "remarks", e.target.value)}/></label></div>)}</details>
       </div> : <div className="report-step" key="email"><button className="report-back" onClick={() => { setStep("review"); setGmailError(""); setStatus(""); }}><ArrowLeft size={16}/> Review week</button><p className="report-intro">Your message and Excel file, sent together from your Gmail account.</p><label>To<input type="email" aria-label="Recipient email" value={profile.email} maxLength={254} placeholder="employer@example.com" onChange={e => onProfile({ ...profile, email: e.target.value })}/></label><label>Subject<input aria-label="Email subject" value={subject} maxLength={150} onChange={e => setSubjectEdit(e.target.value.replace(/[\r\n]/g, ""))}/></label><label>Message<textarea className="email-message" aria-label="Email message" value={message} maxLength={10000} onChange={e => setMessageEdit(e.target.value)}/></label>
         <div className="report-ready" aria-live="polite"><FileSpreadsheet size={23}/><div><strong>{file?.name || "Creating your attachment…"}</strong><span>{file ? `${Math.ceil(file.size / 1024)} KB · ${includeNotes ? "Shift notes included" : "No shift notes"}` : "Your Excel file will be attached automatically"}</span></div>{file && <Check size={16}/>}</div>
-        <div className="gmail-account"><span>{account ? "Sending from " + account.email : "Connect Gmail below, then review the sender before sending."}</span>{account && <button className="secondary-btn" disabled={connecting || !online} onClick={() => void connectAccount()}>{connecting ? "Connecting…" : "Change account"}</button>}{!clientId && <button className="text-action" onClick={onSettings}>Set up Google in Settings</button>}</div>
+        <div className="gmail-account"><span>{account ? "Sending from " + account.email : savedEmail ? "Saved sender: " + savedEmail + ". Continue with Gmail to renew access." : "Connect Gmail below, then review the sender before sending."}</span>{(account || savedEmail) && <button className="secondary-btn" disabled={connecting || !online} onClick={() => void connectAccount(true)}>{connecting ? "Connecting…" : "Change account"}</button>}{!clientId && <button className="text-action" onClick={onSettings}>Set up Google in Settings</button>}</div>
         <p className="report-hint">Connecting your account does not send the email.</p>
         {gmailError && <div className="gmail-error" role="alert"><p>{gmailError}</p><details><summary>Gmail setup</summary><p>Use the same Google Web client ID as Sheets. In its Google project, <a href="https://console.cloud.google.com/apis/library/gmail.googleapis.com" target="_blank" rel="noopener noreferrer">enable Gmail API</a>, add <code>https://www.googleapis.com/auth/gmail.send</code> in <a href="https://console.cloud.google.com/auth/scopes" target="_blank" rel="noopener noreferrer">Data Access</a>, and add your account as a test user if needed.</p><button className="secondary-btn" onClick={onSettings}>Open app settings</button></details></div>}
       </div>}
@@ -157,7 +164,7 @@ export default function WeeklyExport({ initialWeek, zone, shifts, active, profil
       </fieldset>
       <div className="modal-actions report-actions">
         <p className={`report-action-hint ${gmailError || fileError ? "is-error" : ""}`} role={gmailError || fileError ? "alert" : "status"}>{gmailError || fileError || (!online ? "Offline · download your file now, send when online." : status || (file ? `${hhmm(report.total)} hours · ${includeNotes ? "Notes included" : "No shift notes"}${step === "email" && account ? ` · ${account.email}` : ""}` : "Preparing your Excel attachment…"))}</p>
-        {step === "review" ? <button className="modal-submit continue-email" disabled={!file || !historyReady || Boolean(uncertain) || sending || closing} onClick={() => void showEmail()}>Continue to email<ArrowRight size={18}/></button> : !account ? <button className="modal-submit gmail-connect" disabled={connecting || !online || closing} onClick={clientId ? () => void connectAccount() : onSettings}><Mail size={18}/>{connecting ? "Connecting…" : clientId ? "Connect Gmail" : "Set up Google"}</button> : <button className="modal-submit gmail-send" disabled={!file || !validRecipient(profile.email) || !subject.trim() || sending || connecting || !online || Boolean(uncertain) || closing} onClick={() => void sendEmail()}><Mail size={18}/>{sending ? "Sending…" : "Send email with attachment"}</button>}
+        {step === "review" ? <button className="modal-submit continue-email" disabled={!file || !historyReady || Boolean(uncertain) || sending || closing} onClick={() => void showEmail()}>Continue to email<ArrowRight size={18}/></button> : !account ? <button className="modal-submit gmail-connect" disabled={connecting || !online || closing} onClick={clientId ? () => void connectAccount() : onSettings}><Mail size={18}/>{connecting ? "Connecting…" : clientId ? savedEmail ? "Continue with Gmail" : "Connect Gmail" : "Set up Google"}</button> : <button className="modal-submit gmail-send" disabled={!file || !validRecipient(profile.email) || !subject.trim() || sending || connecting || !online || Boolean(uncertain) || closing} onClick={() => void sendEmail()}><Mail size={18}/>{sending ? "Sending…" : "Send email with attachment"}</button>}
         <div className="report-quick-actions"><button className="secondary-btn" disabled={!file || sending || closing} onClick={downloadFile}><Download size={16}/>{file ? "Download Excel" : "Creating file…"}</button><button className="secondary-btn" disabled={!file || sending || closing} onClick={() => void shareFile()}><Share2 size={16}/> Share to app</button></div>
       </div>
       </>}

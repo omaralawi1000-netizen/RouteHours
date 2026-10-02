@@ -91,6 +91,6 @@ test("Settings account lookup requests only email while Gmail requests send sepa
     assert.equal((await gmailToken(id)).email, "worker@example.com");
     assert.deepEqual(requests, [GOOGLE_EMAIL_SCOPE, `${GMAIL_SCOPE} ${GOOGLE_EMAIL_SCOPE}`]);
     globalThis.fetch = async () => new Response("{}", { status: 401 });
-    await assert.rejects(googleAccount(id), /session expired/);
+    await assert.rejects(googleAccount(id,{forceAccountChoice:true}), /session expired/);
   } finally { restore(); globalThis.fetch = originalFetch; }
 });

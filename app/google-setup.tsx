@@ -9,7 +9,8 @@ type Props = {
   onChange: (value: string) => void;
   onSave: () => void;
   connectedEmail: string;
-  onConnect: () => void;
+  rememberedEmail: string;
+  onConnect: (changeAccount?: boolean) => void;
   connecting: boolean;
   online: boolean;
   error: string;
@@ -19,7 +20,7 @@ const clientsUrl = "https://console.cloud.google.com/auth/clients";
 const audienceUrl = "https://console.cloud.google.com/auth/audience";
 const scopesUrl = "https://console.cloud.google.com/auth/scopes";
 
-export default function GoogleSetup({ clientId, onChange, onSave, connectedEmail, onConnect, connecting, online, error }: Props) {
+export default function GoogleSetup({ clientId, onChange, onSave, connectedEmail, rememberedEmail, onConnect, connecting, online, error }: Props) {
   const [origin, setOrigin] = useState("https://route-hours.vercel.app");
   const [copyStatus, setCopyStatus] = useState("");
   const normalized = normalizeGoogleClientId(clientId);
@@ -47,7 +48,8 @@ export default function GoogleSetup({ clientId, onChange, onSave, connectedEmail
     </label>
     {clientId.trim() && <p id="google-id-status" className={`id-status ${valid ? "valid" : "invalid"}`}>{valid ? "Client ID format looks right. Save it, then connect." : "Use a Web application client ID ending in .apps.googleusercontent.com, or its downloaded JSON."}</p>}
     <button type="button" className="google-save" disabled={connecting} onClick={onSave}><Check size={16}/> Save Google client ID</button>
-    <button type="button" className="modal-submit" disabled={connecting || !online || invalid} onClick={onConnect}>{connecting ? "Connecting…" : connectedEmail ? "Change Google account" : "Connect Google"}<Mail size={17}/></button>
+    <button type="button" className="modal-submit" disabled={connecting || !online || invalid} onClick={() => onConnect(Boolean(connectedEmail))}>{connecting ? "Connecting…" : connectedEmail ? "Change Google account" : rememberedEmail ? "Continue with Google" : "Connect Google"}<Mail size={17}/></button>
+    {!connectedEmail && rememberedEmail && <><p className="origin-help">Saved account: {rememberedEmail}. Your client ID is saved; Google access may need renewing.</p><button className="text-action" disabled={connecting || !online} onClick={() => onConnect(true)}>Use another account</button></>}
     {!online && <p className="origin-help">Connect to the internet to sign in to Google. Your timer and typed notes still work offline.</p>}
     {connectedEmail && <p className="connection-result success">Account: {connectedEmail}. Sheets and email permissions are requested when you use those actions.</p>}
     {error && <p className="form-error" role="alert">{error}</p>}
@@ -75,7 +77,7 @@ export default function GoogleSetup({ clientId, onChange, onSave, connectedEmail
         <li>In <a href={scopesUrl} target="_blank" rel="noopener noreferrer">Data Access</a>, add these scopes for the features you use: <code>https://www.googleapis.com/auth/userinfo.email</code>, <code>https://www.googleapis.com/auth/drive.file</code> and <code>https://www.googleapis.com/auth/gmail.send</code>.</li>
         <li>If your app is in testing, add your Google account under <strong>Test users</strong> in <a href={audienceUrl} target="_blank" rel="noopener noreferrer">Audience</a>.</li>
       </ul>
-      <p className="origin-help">Connecting here confirms the account's email address. You choose the sending account again before emailing a timesheet.</p>
+      <p className="origin-help">Connecting here confirms your account. Gmail asks for its own permission the first time; the sender stays visible before you send.</p>
     </details>
   </div>;
 }
