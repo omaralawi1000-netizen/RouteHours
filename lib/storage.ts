@@ -65,18 +65,25 @@ export async function saveSubmission(value: Submission) {
   const db = await database();
   return new Promise<void>((resolve, reject) => { const tx = db.transaction('submissions', 'readwrite'); tx.objectStore('submissions').put(value); tx.oncomplete = () => { window.dispatchEvent(new Event('routehours:submissions')); resolve(); }; tx.onerror = tx.onabort = () => reject(new Error('The email record could not be saved. Check Gmail Sent before sending again.')); });
 }
-// Claim a send in one transaction so two tabs cannot email the same report at once.
-export async function beginSubmission(value: Submission) {
+// Check the current receipts and claim the send in the same transaction.
+export async function beginSubmission(value: Submission, allowDuplicate = false) {
   const db = await database();
   return new Promise<void>((resolve, reject) => {
-    const tx = db.transaction('submissions','readwrite'), store = tx.objectStore('submissions'); let conflict = false;
+    const tx = db.transaction('submissions','readwrite'), store = tx.objectStore('submissions'); let conflict = '';
     const request = store.getAll();
     request.onsuccess = () => {
-      if (request.result.some((r: Submission) => r.week === value.week && (r.status === 'sending' || r.status === 'uncertain'))) { conflict = true; tx.abort(); return; }
+      if (request.result.some((r: Submission) => r.week === value.week && (r.status === 'sending' || r.status === 'uncertain'))) {
+        conflict = 'Another send for this week is in progress or unconfirmed. Close this sheet, reopen it and check Gmail Sent.';
+        tx.abort(); return;
+      }
+      if (!allowDuplicate && request.result.some((r: Submission) => r.week === value.week && r.fingerprint === value.fingerprint && r.status === 'sent')) {
+        conflict = 'This same report was already sent. Review the latest email records and confirm sending another copy. Nothing was sent.';
+        tx.abort(); return;
+      }
       store.put(value);
     };
     tx.oncomplete = () => { window.dispatchEvent(new Event('routehours:submissions')); resolve(); };
-    tx.onerror = tx.onabort = () => reject(new Error(conflict ? 'Another send for this week is in progress or unconfirmed. Close this sheet, reopen it and check Gmail Sent.' : 'Could not save the email record. Nothing was sent.'));
+    tx.onerror = tx.onabort = () => reject(new Error(conflict || 'Could not save the email record. Nothing was sent.'));
   });
 }
 export async function allSubmissions(): Promise<Submission[]> {

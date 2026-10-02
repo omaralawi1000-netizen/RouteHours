@@ -1,5 +1,5 @@
-import { localDateKey, minutesBetween, type Shift } from "./time";
-import { reportRows, type WeeklyReport } from "./timesheet";
+import { localDateKey, minutesBetween, type Shift } from "./time.ts";
+import { columnLetter, reportLayout, timeSerial, type WeeklyReport } from "./timesheet.ts";
 
 async function googleRequest(url: string, accessToken: string, method: string, body: unknown) {
   const response = await fetch(url, {
@@ -45,27 +45,35 @@ export async function createGoogleSheet(accessToken: string, shifts: Shift[], re
 }
 
 async function createWeeklyGoogleSheet(accessToken: string, report: WeeklyReport) {
-  const rows = reportRows(report);
-  const totalIndex = 4 + report.rows.length;
-  const remarksIndex = totalIndex + 3;
-  const range = (row: number, start = 0, end = 9) => ({ sheetId: 0, startRowIndex: row, endRowIndex: row + 1, startColumnIndex: start, endColumnIndex: end });
+  const layout = reportLayout(report);
+  const { rows, totalIndex, remarksIndex, totalColumn } = layout;
+  const columnCount = layout.headers.length;
+  const totalLetter = columnLetter(totalColumn);
+  const range = (row: number, start = 0, end = columnCount) => ({ sheetId: 0, startRowIndex: row, endRowIndex: row + 1, startColumnIndex: start, endColumnIndex: end });
+  const dateSerial = (date: string) => (Date.parse(`${date}T00:00:00Z`) - Date.UTC(1899, 11, 30)) / 86400000;
   const sheet = await googleRequest("https://sheets.googleapis.com/v4/spreadsheets", accessToken, "POST", {
     properties: { title: `RouteHours · ${report.title}${report.profile.name ? ` · ${report.profile.name}` : ""}`, timeZone: report.zone, locale: "da_DK" },
-    sheets: [{ properties: { sheetId: 0, title: "Ugeseddel", gridProperties: { frozenRowCount: 4, rowCount: Math.max(100, rows.length), columnCount: 9, hideGridlines: true } },
-      merges: [range(0), range(1, 1, 4), range(1, 5, 9), range(2), range(totalIndex, 0, 8), range(totalIndex + 1), range(remarksIndex), ...report.remarks.map((_, i) => range(remarksIndex + 1 + i, 2))],
+    sheets: [{ properties: { sheetId: 0, title: "Ugeseddel", gridProperties: { frozenRowCount: 4, rowCount: Math.max(100, rows.length), columnCount, hideGridlines: true } },
+      merges: [range(0), range(1, 1, 4), range(1, 5), range(2), range(totalIndex, 0, totalColumn), range(totalIndex + 1), ...(remarksIndex === null ? [] : [range(remarksIndex), ...layout.remarks.map((_, i) => range(remarksIndex + 1 + i, 2))])],
       data: [{ startRow: 0, startColumn: 0,
-        columnMetadata: [65, 110, 165, 105, 85, 85, 85, 130, 100].map(pixelSize => ({ pixelSize })),
-        rowMetadata: rows.map((_, i) => ({ pixelSize: i === 0 ? 46 : i > remarksIndex ? Math.max(40, Math.ceil((report.remarks[i - remarksIndex - 1]?.text.length || 0) / 90) * 19) : 32 })),
-        rowData: rows.map((row, i) => ({ values: Array.from({ length: 9 }, (_, j) => {
-          const value = row[j] ?? "";
+        columnMetadata: [65, 110, ...Array(layout.intervalCount * 2).fill(85), 65, 65, 65, 105, 95].map(pixelSize => ({ pixelSize })),
+        rowMetadata: rows.map((_, i) => ({ pixelSize: i === 0 ? 48 : remarksIndex !== null && i > remarksIndex ? Math.max(40, Math.ceil((layout.remarks[i - remarksIndex - 1]?.text.length || 0) / 105) * 19) : 36 })),
+        rowData: rows.map((row, i) => ({ values: Array.from({ length: columnCount }, (_, j) => {
+          let value = row[j] ?? "";
+          const daily = i >= 4 && i < totalIndex;
+          const remark = remarksIndex !== null && i > remarksIndex ? layout.remarks[i - remarksIndex - 1] : null;
+          if (j === 1 && (daily || remark)) value = dateSerial(daily ? layout.dailyRows[i - 4].date : remark!.date);
+          const timeCell = daily && j >= 2 && j < 2 + layout.intervalCount * 2;
+          if (timeCell && value) value = timeSerial(String(value));
           const heading = i === 0 || i === 3 || i === remarksIndex;
           return {
-            userEnteredValue: i === totalIndex && j === 8 ? { formulaValue: `=SUM(I5:I${totalIndex})` } : typeof value === "number" ? { numberValue: value } : { stringValue: value },
+            userEnteredValue: i === totalIndex && j === totalColumn ? { formulaValue: `=SUM(${totalLetter}5:${totalLetter}${totalIndex})` } : typeof value === "number" ? { numberValue: value } : { stringValue: value },
             userEnteredFormat: {
-              wrapStrategy: "WRAP", verticalAlignment: "TOP",
-              backgroundColor: heading ? { red: .10, green: .24, blue: .19 } : i === totalIndex ? { red: .87, green: .94, blue: .86 } : { red: .97, green: .98, blue: .96 },
-              textFormat: { fontFamily: "Arial", fontSize: i === 0 ? 20 : 10, bold: heading || i === totalIndex, foregroundColor: heading ? { red: 1, green: 1, blue: 1 } : { red: .1, green: .2, blue: .15 } },
-              ...(j === 8 && i >= 4 && i <= totalIndex ? { numberFormat: { type: "TIME", pattern: "[h]:mm" } } : {}),
+              wrapStrategy: "WRAP", verticalAlignment: remark ? "TOP" : "MIDDLE",
+              ...(daily && j >= 2 || i === 3 || i === totalIndex && j === totalColumn ? { horizontalAlignment: "CENTER" } : {}),
+              backgroundColor: heading ? { red: .15, green: .20, blue: .29 } : i === totalIndex ? { red: .91, green: .93, blue: .98 } : daily && i % 2 === 0 ? { red: .96, green: .97, blue: .98 } : { red: 1, green: 1, blue: 1 },
+              textFormat: { fontFamily: "Arial", fontSize: i === 0 ? 20 : i === totalIndex + 1 ? 9 : 10, bold: heading || i === totalIndex, foregroundColor: heading ? { red: 1, green: 1, blue: 1 } : { red: .14, green: .19, blue: .28 } },
+              ...(j === totalColumn && i >= 4 && i <= totalIndex ? { numberFormat: { type: "TIME", pattern: "[h]:mm" } } : timeCell ? { numberFormat: { type: "TIME", pattern: "[hh]:mm" } } : j === 1 && (daily || remark) ? { numberFormat: { type: "DATE", pattern: "dd.mm.yyyy" } } : {}),
             },
           };
         }) })),

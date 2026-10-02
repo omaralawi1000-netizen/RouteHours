@@ -6,6 +6,7 @@ export type DayDetail = { syg?: string; fri?: string; sh?: string; andet?: strin
 export type DayDetails = Record<string, DayDetail>;
 export type TimesheetRow = { day: string; date: string; start: string; end: string; minutes: number; syg: string; fri: string; sh: string; andet: string };
 export type WeeklyReport = { title: string; monday: string; sunday: string; profile: PayrollProfile; rows: TimesheetRow[]; remarks: { day: string; date: string; text: string }[]; total: number; zone: string; includesNotes: boolean };
+export type DailyTimesheetRow = Omit<TimesheetRow, "start" | "end"> & { intervals: { start: string; end: string; minutes: number }[] };
 const weekdays = ["Man", "Tirs", "Ons", "Tors", "Fre", "Lør", "Søn"];
 export const reportHeaders = ["Dag", "Dato", "Mødetid i bussen", "Tur slut", "Syg", "Fri", "SH", "Andet", "I alt"];
 export function localDay(key: string) { return new Date(`${key}T00:00:00`); }
@@ -20,7 +21,6 @@ export function weekTitle(key: string) {
   const week = Math.ceil(((d.getTime() - Date.UTC(year, 0, 1)) / 86400000 + 1) / 7);
   return `Uge ${week} - ${year}`;
 }
-function time(date: Date) { return date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }); }
 
 export function buildWeeklyReport(shifts: Shift[], selected: string, profile: PayrollProfile, details: DayDetails, includesNotes = true, zone = DEFAULT_ZONE): WeeklyReport {
   const monday = moveWeek(selected, 0);
@@ -51,16 +51,55 @@ export function buildWeeklyReport(shifts: Shift[], selected: string, profile: Pa
   return { title: weekTitle(monday), monday, sunday: remarks[6].date, profile: { ...profile }, rows, remarks, total: rows.reduce((sum, row) => sum + row.minutes, 0), zone, includesNotes };
 }
 
-// Text cells are explicitly strings in both export formats, never user-supplied formulas.
-export function reportRows(report: WeeklyReport): (string | number)[][] {
-  return [
+// The saved report schema stays unchanged so historic email receipts retain their fingerprint.
+// Only its presentation groups the recorded runs into one row per calendar day.
+export function dailyReportRows(report: WeeklyReport): DailyTimesheetRow[] {
+  return Array.from({ length: 7 }, (_, index) => {
+    const date = addDays(report.monday, index);
+    const rows = report.rows.filter(row => row.date === date);
+    const field = (key: "syg" | "fri" | "sh" | "andet") => [...new Set(rows.map(row => row[key]).filter(Boolean))].join("; ");
+    return {
+      day: rows[0]?.day || weekdays[index], date,
+      intervals: rows.filter(row => row.start || row.end).map(row => ({ start: row.start, end: row.end, minutes: row.minutes })),
+      minutes: rows.reduce((sum, row) => sum + row.minutes, 0),
+      syg: field("syg"), fri: field("fri"), sh: field("sh"), andet: field("andet"),
+    };
+  });
+}
+
+export function reportLayout(report: WeeklyReport) {
+  const dailyRows = dailyReportRows(report);
+  const intervalCount = Math.max(2, ...dailyRows.map(row => row.intervals.length));
+  const headers = ["Dag", "Dato", ...Array.from({ length: intervalCount }, (_, i) => [`Start ${i + 1}`, `Slut ${i + 1}`]).flat(), "Syg", "Fri", "SH", "Andet", "I alt"];
+  const totalColumn = headers.length - 1;
+  const totalIndex = 4 + dailyRows.length;
+  const remarks = report.remarks.filter(row => row.text.trim());
+  const remarksIndex = remarks.length ? totalIndex + 3 : null;
+  const totalRow: (string | number)[] = Array(headers.length).fill("");
+  totalRow[0] = "I alt · arbejdstid";
+  totalRow[totalColumn] = report.total / 1440;
+  const rows: (string | number)[][] = [
     [report.title], ["Navn", report.profile.name, "", "", "Løn-nr.", report.profile.number],
     [`${displayDate(report.monday)} – ${displayDate(report.sunday)} · ${report.zone}`],
-    reportHeaders,
-    ...report.rows.map(r => [r.day, displayDate(r.date), r.start, r.end, r.syg, r.fri, r.sh, r.andet, r.minutes / 1440]),
-    ["I alt · arbejdstid", "", "", "", "", "", "", "", report.total / 1440],
+    headers,
+    ...dailyRows.map(row => [row.day, displayDate(row.date), ...Array.from({ length: intervalCount }, (_, i) => [row.intervals[i]?.start || "", row.intervals[i]?.end || ""]).flat(), row.syg, row.fri, row.sh, row.andet, row.minutes / 1440]),
+    totalRow,
     ["Syg/Fri/SH/Andet er manuelle angivelser og indgår ikke i arbejdstiden."],
-    [], ["Bemærkninger"],
-    ...report.remarks.map(r => [r.day, displayDate(r.date), r.text]),
   ];
+  if (remarks.length) rows.push([], ["Bemærkninger"], ...remarks.map(row => [row.day, displayDate(row.date), row.text]));
+  return { dailyRows, intervalCount, headers, totalColumn, totalIndex, remarksIndex, remarks, rows };
+}
+
+// Text values stay literal in both formats; only generated totals become formulas.
+export function reportRows(report: WeeklyReport): (string | number)[][] { return reportLayout(report).rows; }
+
+export function columnLetter(index: number) {
+  let letters = "";
+  for (let n = index + 1; n > 0; n = Math.floor((n - 1) / 26)) letters = String.fromCharCode(65 + ((n - 1) % 26)) + letters;
+  return letters;
+}
+
+export function timeSerial(value: string) {
+  const [hours, minutes] = value.split(":").map(Number);
+  return (hours * 60 + minutes) / 1440;
 }
