@@ -1,5 +1,6 @@
 import type { Shift } from './time.ts';
 import type { WeeklyReport } from './timesheet.ts';
+import { validateTemplates, type ShiftTemplate } from './templates.ts';
 
 export type Submission = { id: string; week: string; report: WeeklyReport; fingerprint: string; recipient: string; sender: string; subject: string; message: string; filename: string; attachment: Blob; createdAt: string; status: 'reviewed' | 'sending' | 'sent' | 'uncertain'; gmailId?: string };
 export function stateSignature(data: object) { return JSON.stringify(Object.keys(data).sort().map(key => [key, (data as Record<string, unknown>)[key]])); }
@@ -9,9 +10,12 @@ export function validShift(value: unknown): value is Shift {
   const s = value as Shift;
   return typeof s.id === 'string' && s.id.length > 0 && typeof s.start === 'string' && typeof s.end === 'string' && Number.isFinite(Date.parse(s.start)) && Date.parse(s.end) > Date.parse(s.start) && Array.isArray(s.notes) && s.notes.every(n => typeof n === 'string') && (!s.summary || typeof s.summary.overview === 'string' && [s.summary.activities, s.summary.notable, s.summary.followUp].every(a => Array.isArray(a) && a.every(n => typeof n === 'string')));
 }
-export function validateBackup(value: unknown): asserts value is { shifts: Shift[]; active?: { start: string; notes: string[] }; payroll?: { name: string; number: string; email: string }; dayDetails?: Record<string, Record<string, string>>; noteDraft?: string; workZone?: string; submissions?: unknown[] } {
+export function validateBackup(value: unknown): asserts value is { shifts: Shift[]; active?: { start: string; notes: string[] }; payroll?: { name: string; number: string; email: string }; dayDetails?: Record<string, Record<string, string>>; noteDraft?: string; workZone?: string; submissions?: unknown[]; templates?: ShiftTemplate[]; createdAt?: string } {
   if (!value || typeof value !== 'object') throw new Error('This is not a RouteHours backup.');
   const d = value as Record<string, unknown>;
+  if (d.version !== undefined && ![1,2,3].includes(d.version as number)) throw new Error('This backup version is not supported. Your current data has not changed.');
+  if (d.templates !== undefined) validateTemplates(d.templates);
+  if (d.createdAt !== undefined && (typeof d.createdAt !== 'string' || !Number.isFinite(Date.parse(d.createdAt)))) throw new Error('Invalid backup date.');
   if (!Array.isArray(d.shifts) || !d.shifts.every(validShift) || new Set(d.shifts.map(s => s.id)).size !== d.shifts.length) throw new Error('The file contains invalid or duplicate shift records. Your current data has not changed.');
   if (d.active) { const a = d.active as { start: string; notes: string[] }; if (typeof a.start !== 'string' || !Number.isFinite(Date.parse(a.start)) || !Array.isArray(a.notes) || !a.notes.every(n => typeof n === 'string')) throw new Error('The running shift is invalid.'); }
   if (d.payroll && (typeof d.payroll !== 'object' || ['name','number','email'].some(k => typeof (d.payroll as Record<string, unknown>)[k] !== 'string'))) throw new Error('Invalid payroll details.');

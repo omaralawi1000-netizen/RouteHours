@@ -1,15 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { TemplatePicker } from "./shift-templates";
+import type { ShiftTemplate } from "@/lib/templates";
 import { ArrowRight, Check, ChevronLeft, ChevronRight, Download, Plus } from "lucide-react";
 import { buildWeeklyReport, moveWeek, type DayDetails, type PayrollProfile } from "@/lib/timesheet";
 import { dateInZone, dayLedger, shiftWarnings, timeInZone } from "@/lib/ledger";
 import { durationLabel, type Shift } from "@/lib/time";
 import { allSubmissions, downloadBlob, reportFingerprint, type Submission } from "@/lib/storage";
 
-type Props = { week: string; onWeek: (week: string) => void; shifts: Shift[]; profile: PayrollProfile; details: DayDetails; zone: string; onReview: () => void; onEdit: (shift: Shift) => void; onAdd: () => void };
+type Props = { week: string; onWeek: (week: string) => void; shifts: Shift[]; profile: PayrollProfile; details: DayDetails; zone: string; onReview: () => void; onEdit: (shift: Shift) => void; onAdd: () => void; templates: ShiftTemplate[]; onSettings: () => void };
 
-export default function WeekView({ week, onWeek, shifts, profile, details, zone, onReview, onEdit, onAdd }: Props) {
+export default function WeekView({ week, onWeek, shifts, profile, details, zone, onReview, onEdit, onAdd, templates, onSettings }: Props) {
   const [receipts, setReceipts] = useState<Submission[]>([]), [error, setError] = useState("");
   useEffect(() => {
     const read = () => { void allSubmissions().then(setReceipts).catch(() => setError("Saved email records could not be read. Try reloading.")); };
@@ -54,6 +56,7 @@ export default function WeekView({ week, onWeek, shifts, profile, details, zone,
     </div>
     {warnings.length > 0 && <div className="review-warning"><strong>{warnings.length} {warnings.length === 1 ? "thing" : "things"} to check</strong>{warnings.map((w, i) => <button key={i} onClick={() => { const shift = shifts.find(s => s.id === w.ids[0]); if (shift) onEdit(shift); }}>{w.message}<ArrowRight size={14}/></button>)}</div>}
     <button className="text-action" onClick={onAdd}><Plus size={17}/>Add a missing shift</button>
+    <TemplatePicker templates={templates} week={week} zone={zone} onDraft={onEdit} onSettings={onSettings}/>
     {records.length > 0 && <details className="receipt-history"><summary>Email records · {records.length}</summary>{records.map(r => <div className="receipt-row" key={r.id}><Check size={17}/><div><strong>{r.status === "sent" ? "Sent" : r.status === "reviewed" ? "Reviewed, not sent" : "Sending not confirmed — check Gmail"}</strong><small>{r.recipient || "No recipient yet"} · {new Date(r.createdAt).toLocaleString("en-GB")}</small><small>{r.filename}</small></div><button className="icon-btn" aria-label="Download saved attachment" onClick={() => downloadBlob(r.attachment, r.filename)}><Download size={18}/></button></div>)}</details>}
     {error && <p role="alert">{error}</p>}
     <p className="zone-caption">Times in {zone} · Completed shifts only</p>

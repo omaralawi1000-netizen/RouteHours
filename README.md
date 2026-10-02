@@ -109,3 +109,11 @@ Settings' **Connect Google** requests email-address access only. Gmail send and 
 Voice review shows dated intervals and elapsed duration before confirmation; corrections show the saved interval too. Editing the transcript aborts and invalidates pending interpretations so a late reply cannot replace newer words. Missing-shift drafts use the selected week's date and explicitly ask the user to review suggested times. Offline feedback identifies available local features while disabling network-only export and send actions.
 
 Automated browser QA uses an isolated profile and simulated provider responses; it never sends real email. Actual phone microphone accuracy and live Google/Gemini account permissions still require the user's device and credentials.
+
+## Cloud backup and shift templates
+
+Settings > Cloud backup connects Google Drive with the saved Web client ID. Enable Drive API in the same Google project. Back up now creates a new dated JSON file; older snapshots are preserved. The file includes hours, running timer/draft, payroll, remarks, timezone, templates and saved email attachments. API keys and OAuth IDs are excluded. Backups use file-specific Drive access, not access to every file. Sessions stay in memory and must be reconnected after closing or expiry. This is manual backup, not automatic synchronization.
+
+Saved backups > Preview validates a copy before the existing Merge/Replace confirmation. Merge keeps current templates and the timer; Replace restores backup templates when present. Old backup formats remain supported. Downloaded backups contain the same complete data and work offline. Files larger than 30 MB are rejected before restoration.
+
+Settings > Shift templates saves up to eight editable names and start/finish times. Morning 07:00–09:00 and Afternoon 13:00–15:00 are suggestions. Week > Add from a template fills an editable shift for the chosen date, and hours are recorded only after Save shift. Overnight templates finish the following day. Invalid and ambiguous daylight-saving times require correction.
