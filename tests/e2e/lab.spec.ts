@@ -16,11 +16,11 @@ test("lab: a shift starts, finishes into the week, and can be undone", async ({ 
 
 test("lab: the sheet closes with Escape and with Back", async ({ page }) => {
   await page.goto("/lab");
-  await page.getByRole("button", { name: "Open Tuesday's shift" }).click();
+  await page.getByRole("button", { name: "Edit Tuesday's shift" }).click();
   await expect(page.getByRole("dialog", { name: "Tuesday's shift" })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await page.getByRole("button", { name: "Open Tuesday's shift" }).click();
+  await page.getByRole("button", { name: "Edit Tuesday's shift" }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
   await page.goBack();
   await expect(page.getByRole("dialog")).toHaveCount(0);

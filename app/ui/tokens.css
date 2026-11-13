@@ -1,3 +1,15 @@
+/* Wallpaper colours are registered so they blend smoothly when the state changes. */
+@property --sky-top { syntax: "<color>"; inherits: true; initial-value: transparent; }
+@property --sky-mid { syntax: "<color>"; inherits: true; initial-value: transparent; }
+@property --horizon { syntax: "<color>"; inherits: true; initial-value: transparent; }
+@property --ember { syntax: "<color>"; inherits: true; initial-value: transparent; }
+@property --aura { syntax: "<color>"; inherits: true; initial-value: transparent; }
+@property --aura-2 { syntax: "<color>"; inherits: true; initial-value: transparent; }
+@property --hill-far { syntax: "<color>"; inherits: true; initial-value: transparent; }
+@property --hill-mid { syntax: "<color>"; inherits: true; initial-value: transparent; }
+@property --hill-near { syntax: "<color>"; inherits: true; initial-value: transparent; }
+@property --road { syntax: "<color>"; inherits: true; initial-value: transparent; }
+
 /*
  * Headlight design tokens. Two looks with the same structure.
  * Amber is only ever a fill under dark text, and only on the thing to tap or the running state.
@@ -25,16 +37,16 @@
   font-synthesis: none;
 }
 .look[data-look="night"] {
-  --bg: #0A0C11;
+  --bg: #0B0D1C;
   --text: #F2F4F8;
   --text-2: #98A1B1;
   --text-3: #646C7B;
-  --line: rgba(255, 255, 255, 0.08);
-  --glass: rgba(255, 255, 255, 0.06);
-  --glass-strong: rgba(22, 25, 33, 0.72);
-  --glass-edge: rgba(255, 255, 255, 0.12);
-  --glass-shadow: 0 18px 40px -18px rgba(0, 0, 0, 0.7);
-  --press: rgba(255, 255, 255, 0.06);
+  --line: rgba(255, 255, 255, 0.10);
+  --glass: rgba(255, 255, 255, 0.075);
+  --glass-strong: rgba(24, 20, 36, 0.58);
+  --glass-edge: rgba(255, 255, 255, 0.18);
+  --glass-shadow: 0 24px 50px -24px rgba(4, 2, 12, 0.75);
+  --press: rgba(255, 255, 255, 0.08);
   --accent: #FFB547;
   --accent-press: #F0A532;
   --on-accent: #1A1206;
@@ -47,18 +59,22 @@
   --glow-idle-strength: 0.18;
   --glow-run: 255 170 64;
   --glow-run-strength: 0.28;
+  /* Wallpaper: dusk */
+  --sky-top: #090B1C; --sky-mid: #1C1638; --horizon: #4A2147; --ember: #B2452F; --aura: #3B2C7A; --aura-2: #6A2C5E;
+  --hill-far: #2A1E3E; --hill-mid: #191329; --hill-near: #0E0B18; --road: #F5C58A; --stars: 0.8; --grain: 0.08;
 }
+.look[data-look="night"][data-state="running"] { --horizon: #6E2A3A; --ember: #E0742F; --aura: #4A2A6A; --aura-2: #9A3D3A; --hill-far: #3A2236; }
 .look[data-look="day"] {
   color-scheme: light;
-  --bg: #F3F0EA;
+  --bg: #E6DDEA;
   --text: #15171C;
   --text-2: #5C6372;
   --text-3: #8A909C;
-  --line: rgba(21, 23, 28, 0.08);
-  --glass: rgba(255, 255, 255, 0.62);
-  --glass-strong: rgba(255, 255, 255, 0.82);
-  --glass-edge: rgba(255, 255, 255, 0.8);
-  --glass-shadow: 0 18px 40px -22px rgba(60, 48, 30, 0.35);
+  --line: rgba(40, 32, 70, 0.10);
+  --glass: rgba(255, 255, 255, 0.42);
+  --glass-strong: rgba(255, 255, 255, 0.7);
+  --glass-edge: rgba(255, 255, 255, 0.9);
+  --glass-shadow: 0 24px 50px -26px rgba(60, 40, 90, 0.4);
   --press: rgba(21, 23, 28, 0.05);
   --accent: #E8920F;
   --accent-press: #D9860A;
@@ -71,7 +87,11 @@
   --glow-idle-strength: 0.30;
   --glow-run: 255 178 120;
   --glow-run-strength: 0.35;
+  /* Wallpaper: dawn */
+  --sky-top: #B9C7EA; --sky-mid: #E4D3EA; --horizon: #F8C9A8; --ember: #FFB38A; --aura: #C7B8F0; --aura-2: #F4B8D0;
+  --hill-far: #B4AED6; --hill-mid: #988FC4; --hill-near: #7B72AE; --road: #FFF4E2; --stars: 0; --grain: 0.06;
 }
+.look[data-look="day"][data-state="running"] { --sky-top: #E7C9D6; --horizon: #FFBE8A; --ember: #FF9E5E; --aura-2: #FFC2A0; --hill-far: #C7A9C9; }
 .look *, .look *::before, .look *::after { box-sizing: border-box; }
 .look :where(button, input, textarea, select) { font: inherit; color: inherit; }
 .look :where(button) { -webkit-user-select: none; user-select: none; touch-action: manipulation; }
