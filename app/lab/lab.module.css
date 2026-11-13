@@ -12,12 +12,13 @@
 
 /* Hero card: the week (or the running shift) as one piece of glass, left-aligned like a widget */
 .heroCard { padding: 18px 20px 20px; border-radius: 30px; display: flex; flex-direction: column; transition: box-shadow 0.8s ease; }
-.heroLive { box-shadow: inset 0 var(--hairline) 0 var(--glass-edge), 0 0 0 var(--hairline) rgb(var(--glow-run) / 0.35), 0 24px 60px -28px rgb(var(--glow-run) / 0.55); }
+.heroLive { overflow: hidden; box-shadow: inset 0 var(--hairline) 0 var(--glass-edge), 0 0 0 var(--hairline) var(--line), 0 30px 70px -40px rgb(var(--glow-run) / 0.5); }
 .heroHead { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 18px; }
 .heroMeta { font-size: 14px; font-weight: 500; color: var(--text); }
 .heroNumber { display: flex; align-items: baseline; gap: 10px; transform-origin: left center; }
 .big { font-size: 76px; line-height: 1; font-weight: var(--number-weight, 200); letter-spacing: -0.045em; margin: 10px 0 6px -4px; }
-.bigTimer { font-size: 62px; }
+.bigTimer { font-size: 72px; }
+.secs { align-self: flex-start; margin: 20px 0 0 -6px; font-size: 22px; font-weight: 300; color: var(--text-2); }
 .of { font-size: 22px; font-weight: 300; color: var(--text-2); letter-spacing: -0.01em; }
 .under { font-size: 15px; color: var(--text-2); min-height: 22px; }
 .under :global(.numeric) { color: var(--text); }
@@ -83,7 +84,7 @@
 .field input { font-variant-numeric: tabular-nums; font-size: 22px; font-weight: 300; }
 
 /* Round 3: what sits under the big number (week bars, or the live shift line) */
-.heroVisual { position: relative; width: 100%; height: 112px; margin-top: 16px; }
+.heroVisual { position: relative; width: 100%; height: 152px; margin-top: 18px; }
 .visualItem { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: stretch; justify-content: flex-end; gap: 14px; }
 .visualItem > :global(*) { width: 100%; }
 .visualItem > .breakChip { width: auto; align-self: flex-start; }
@@ -133,9 +134,10 @@
 /* Horizon on shift: two glanceable numbers under the line */
 .liveStats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .liveStat { display: flex; flex-direction: column; gap: 2px; padding: 10px 14px; border-radius: 18px; background: var(--press); box-shadow: inset 0 0 0 var(--hairline) var(--line); transition: background 0.5s ease, color 0.5s ease; }
-.liveHot { background: var(--accent); color: var(--on-accent); box-shadow: 0 12px 30px -14px rgb(var(--glow-run) / 0.8); }
+.liveHot { background: color-mix(in srgb, var(--accent) 16%, var(--press)); box-shadow: inset 0 0 0 var(--hairline) color-mix(in srgb, var(--accent) 45%, transparent); }
+.liveHot .liveLabel svg { color: var(--accent); }
 .liveLabel { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-2); }
-.liveHot .liveLabel { color: inherit; opacity: 0.75; }
+.liveHot .liveLabel { color: var(--text); }
 .liveLabel svg { width: 13px; height: 13px; }
 .liveValue { font-size: 26px; font-weight: 300; letter-spacing: -0.02em; line-height: 1.15; }
 
@@ -144,7 +146,7 @@
 .focusMain { flex: 1; display: flex; flex-direction: column; }
 .focusHero { flex: 1; padding: 16px 18px 18px; }
 .focusHero .big { font-size: 84px; margin-top: 8px; }
-.focusHero .bigTimer { font-size: 64px; }
+.focusHero .bigTimer { font-size: 84px; }
 .focusVisual { flex: 1; height: auto; min-height: 150px; max-height: 280px; margin-top: 14px; }
 .focusBars > :global(*) { flex: 1; }
 .payPill { display: inline-flex; align-items: center; height: 28px; padding: 0 12px; border-radius: 999px; font-size: 13px; font-weight: 600; color: var(--text); background: var(--press); box-shadow: inset 0 0 0 var(--hairline) var(--line); }

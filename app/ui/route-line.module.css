@@ -1,0 +1,26 @@
+.wrap { position: relative; width: 100%; padding: 0 14px; }
+.line { position: relative; height: 44px; }
+/* The headlight: a soft warm pool that travels with the bus and lights the glass around it. */
+.light { position: absolute; top: 50%; width: 260px; height: 200px; margin: -100px 0 0 -110px; border-radius: 50%; background: radial-gradient(closest-side, rgb(var(--glow-run) / 0.5), rgb(var(--glow-run) / 0.16) 55%, transparent); pointer-events: none; filter: blur(6px); }
+/* A short beam ahead of the bus, like headlights on the road. */
+.beam { position: absolute; top: 50%; width: 90px; height: 34px; margin: -17px 0 0 10px; background: linear-gradient(90deg, rgb(255 236 200 / 0.55), transparent); clip-path: polygon(0 38%, 100% 0, 100% 100%, 0 62%); filter: blur(3px); pointer-events: none; z-index: 1; }
+.ahead { position: absolute; left: 0; right: 0; top: 50%; height: 4px; margin-top: -2px; border-radius: 2px; background: radial-gradient(circle, color-mix(in srgb, var(--text) 38%, transparent) 1.4px, transparent 1.8px) 0 50% / 9px 4px repeat-x; }
+.done { position: absolute; left: 0; right: 0; top: 50%; height: 6px; margin-top: -3px; border-radius: 3px; background: linear-gradient(90deg, rgb(var(--glow-run) / 0.35), var(--accent) 70%, #FFE7BF); transform-origin: left; will-change: transform; box-shadow: 0 0 14px rgb(var(--glow-run) / 0.45); }
+.gap { position: absolute; top: 50%; height: 10px; margin-top: -5px; border-radius: 3px; background: repeating-linear-gradient(135deg, var(--text) 0 2px, transparent 2px 5px); opacity: 0.5; }
+.stop { position: absolute; top: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; background: var(--bg); box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--text) 40%, transparent); transition: background 0.6s ease, box-shadow 0.6s ease; }
+.passed { background: #FFF4DE; box-shadow: 0 0 0 2px rgb(var(--glow-run) / 0.55), 0 0 10px rgb(var(--glow-run) / 0.6); }
+.end { width: 14px; height: 14px; margin: -7px 0 0 -7px; }
+.end:not(.passed) { box-shadow: inset 0 0 0 3px color-mix(in srgb, var(--text) 55%, transparent); }
+.cafe { position: absolute; top: 50%; width: 24px; height: 24px; margin: -12px 0 0 -12px; display: grid; place-items: center; border-radius: 50%; background: var(--bg); color: var(--accent); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 70%, transparent); }
+.cafe svg { width: 13px; height: 13px; }
+.cafeTaken { background: #FFF4DE; color: #6B4A12; box-shadow: 0 0 0 2px rgb(var(--glow-run) / 0.5); }
+.cafeDue { animation: call 1.6s ease-in-out infinite; }
+@keyframes call { 50% { box-shadow: inset 0 0 0 1.5px var(--accent), 0 0 0 7px rgb(var(--glow-run) / 0.18); } }
+.busAt { position: absolute; top: 50%; width: 0; height: 0; z-index: 2; }
+.bus { position: absolute; left: -17px; top: -17px; width: 34px; height: 34px; display: grid; place-items: center; border-radius: 12px; color: var(--on-accent); background: linear-gradient(160deg, #FFE3A8, var(--accent)); box-shadow: 0 6px 16px -4px rgb(var(--glow-run) / 0.8), inset 0 1px 0 rgb(255 255 255 / 0.6); animation: idle 1.4s ease-in-out infinite; }
+.bus svg { width: 18px; height: 18px; }
+.parked { animation: none; filter: saturate(0.6); opacity: 0.85; }
+@keyframes idle { 50% { translate: 0 -1.5px; } }
+:global([data-motion="reduced"]) .bus, :global([data-motion="reduced"]) .cafeDue { animation: none; }
+@media (prefers-reduced-motion: reduce) { .bus, .cafeDue { animation: none; } }
+.ends { display: flex; justify-content: space-between; margin: 4px -6px 0; font-size: 12px; color: var(--text-2); }

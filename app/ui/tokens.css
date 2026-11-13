@@ -17,7 +17,7 @@
  * Day dark on amber 7.3:1, secondary 5.3:1.
  */
 .look {
-  --font-sans: var(--font-inter-tight), system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-sans: var(--font-jakarta), var(--font-inter-tight), system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-serif: var(--font-sans);
   --title-style: normal;
   --title-weight: 600;
@@ -88,8 +88,9 @@
   --glow-run: 255 178 120;
   --glow-run-strength: 0.35;
 }
-/* Font pairings. Clean (above) is the default. Titles use the .serif class whichever pairing is on. */
-.look[data-font="soft"] { --font-sans: var(--font-outfit), system-ui, sans-serif; --font-serif: var(--font-sans); --title-weight: 500; --title-tracking: -0.025em; --title-scale: 0.82; }
+/* Font pairings. Modern (Plus Jakarta Sans, above) is the default. Titles use the .serif class whichever pairing is on. */
+.look[data-font="clean"] { --font-sans: var(--font-inter-tight), system-ui, sans-serif; --font-serif: var(--font-sans); }
+.look[data-font="character"] { --font-sans: var(--font-bricolage), system-ui, sans-serif; --font-serif: var(--font-sans); --title-weight: 650; --title-tracking: -0.03em; --title-scale: 0.84; }
 .look[data-font="editorial"] { --font-serif: var(--font-fraunces), "Iowan Old Style", Georgia, serif; --title-style: italic; --title-weight: 400; --title-tracking: -0.02em; --title-scale: 0.9; }
 .look *, .look *::before, .look *::after { box-sizing: border-box; }
 .look :where(button, input, textarea, select) { font: inherit; color: inherit; }

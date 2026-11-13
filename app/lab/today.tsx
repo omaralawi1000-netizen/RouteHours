@@ -9,7 +9,8 @@ import Glass from "../ui/glass";
 import MicPill, { type MicState } from "../ui/mic-pill";
 import RollingNumber from "../ui/rolling-number";
 import SavedCard from "../ui/saved-card";
-import ShiftLine, { type Break } from "../ui/shift-line";
+import RouteLine from "../ui/route-line";
+import { type Break } from "../ui/shift-line";
 import WeekBars, { type DayBar } from "../ui/week-bars";
 import { fade, spring } from "../ui/motion";
 import { item } from "./stagger";
@@ -74,8 +75,10 @@ export default function Today(props: {
   const metaText = idle ? `≈ ${kr(weekMinutes)} before tax` : `≈ ${kr(elapsed / 60000)} so far`;
   const swap = { initial: { opacity: 0, y: 6 }, animate: { opacity: 1, y: 0 }, exit: { opacity: 0, y: -6, transition: fade }, transition: spring.snappy };
   const eyebrow = <AnimatePresence mode="popLayout" initial={false}><m.p key={eyebrowText} className={styles.eyebrow} {...swap}>{eyebrowText}</m.p></AnimatePresence>;
+  const timer = onBreak && currentBreak ? hms(end - currentBreak.start) : hms(elapsed);
   const bigNumber = <m.div ref={number} key={chipPulse} className={styles.heroNumber} initial={chipPulse ? { scale: 1.06 } : false} animate={{ scale: 1 }} transition={spring.reward}>
-    <RollingNumber value={idle ? hm(weekMinutes) : onBreak && currentBreak ? hms(end - currentBreak.start) : hms(elapsed)} className={`${styles.big} ${!idle ? styles.bigTimer : ""} ${onBreak ? styles.paused : ""}`} label={idle ? `${hm(weekMinutes)} worked this week` : `Shift time ${hms(elapsed)}`}/>
+    <RollingNumber value={idle ? hm(weekMinutes) : timer.slice(0, -3)} className={`${styles.big} ${!idle ? styles.bigTimer : ""} ${onBreak ? styles.paused : ""}`} label={idle ? `${hm(weekMinutes)} worked this week` : `Shift time ${hms(elapsed)}`}/>
+    {!idle && <RollingNumber value={timer.slice(-2)} className={`${styles.secs} ${onBreak ? styles.paused : ""}`} label=" "/>}
     <AnimatePresence initial={false}>{idle && <m.span key="of" className={`${styles.of} numeric`} initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, transition: fade }} transition={spring.smooth}>/ 37 h</m.span>}</AnimatePresence>
   </m.div>;
   const under = <AnimatePresence mode="popLayout" initial={false}>
@@ -85,7 +88,8 @@ export default function Today(props: {
         : <>Usually done around <span className="numeric">{clockTime(expectedEnd)}</span></>}
     </m.p>
   </AnimatePresence>;
-  const shiftLine = <ShiftLine startedAt={startedAt} now={end} breaks={breaks} usualMinutes={USUAL.minutes} startLabel={clockTime(startedAt)} endLabel={`~${clockTime(expectedEnd)}`}/>;
+  const breakDueAt = onBreak ? null : end + dueIn * 60000;
+  const shiftLine = <RouteLine startedAt={startedAt} now={end} breaks={breaks} usualMinutes={USUAL.minutes} breakDueAt={breakDueAt !== null && breakDueAt < expectedEnd ? breakDueAt : null} paused={onBreak} startLabel={clockTime(startedAt)} endLabel={`~${clockTime(expectedEnd)}`}/>;
   const due = !onBreak && dueIn <= 0;
   const liveStats = <div className={styles.liveStats}>
     <m.div layout className={`${styles.liveStat} ${due ? styles.liveHot : ""}`} transition={spring.snappy}>
@@ -100,7 +104,7 @@ export default function Today(props: {
   const visual = <div className={styles.heroVisual}>
     <AnimatePresence mode="popLayout" initial={false}>
       {idle
-        ? <m.div key="bars" className={styles.visualItem} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8, transition: spring.exit }} transition={spring.settle}><WeekBars days={props.weekDays}/></m.div>
+        ? <m.div key="bars" className={`${styles.visualItem} ${styles.focusBars}`} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8, transition: spring.exit }} transition={spring.settle}><WeekBars tall days={props.weekDays}/></m.div>
         : <m.div key="line" className={styles.visualItem} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8, transition: spring.exit }} transition={spring.settle}>{shiftLine}{liveStats}</m.div>}
     </AnimatePresence>
   </div>;
