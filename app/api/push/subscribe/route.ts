@@ -19,13 +19,24 @@ export async function POST(request: NextRequest) {
   if (!subscription) return NextResponse.json({ error: "That isn't a valid push subscription." }, { status: 400 });
   const reminders = cleanReminders(data?.reminders);
   const days = cleanDays(data?.days);
-  const old = (await readDevice(subscription.endpoint))?.device;
+  const stored = await readDevice(subscription.endpoint);
+  const old = stored?.device;
   if (!old) {
     if (await devicesFull()) return NextResponse.json({ error: "Reminders are already on for 5 phones. Turn them off on one first." }, { status: 409 });
     const proof = await send(subscription, { title: "Reminders are on", body: "You'll get a nudge before each usual shift.", tag: "reminders-on" });
     if (proof !== "ok") return NextResponse.json({ error: "Couldn't reach this phone. Try turning reminders on again." }, { status: 400 });
   }
-  await writeDevice({ ...subscription, reminders, days, sent: old?.sent ?? {}, createdAt: old?.createdAt ?? new Date().toISOString() });
+  if (!stored) await writeDevice({ ...subscription, reminders, days, sent: {}, createdAt: new Date().toISOString() });
+  else {
+    // An existing phone is updated only on top of its latest file, so a reminder the timer just
+    // claimed (its "sent" mark) is never rolled back and sent twice.
+    let current: typeof stored | null = stored;
+    for (let tries = 0; current && tries < 3; tries++) {
+      const saved = await writeDevice({ ...current.device, ...subscription, reminders, days }, current.etag);
+      if (saved) break;
+      current = await readDevice(subscription.endpoint);
+    }
+  }
   return NextResponse.json({ ok: true, reminders: reminders.length, days });
 }
 
