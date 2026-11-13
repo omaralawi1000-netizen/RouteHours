@@ -61,13 +61,20 @@ export function useVoice({ apiKey, onText, onError }: { apiKey: string; onText: 
   const handlers = useRef({ onText, onError });
   handlers.current = { onText, onError };
 
-  useEffect(() => () => { const l = live.current; if (l) { l.stream.getTracks().forEach(t => t.stop()); window.clearInterval(l.meter); window.clearTimeout(l.stopTimer); void l.audio.close(); } }, []);
+  // Gone means gone: a permission prompt that resolves after the card unmounts must not start a recording.
+  const alive = useRef(true);
+  const starting = useRef(false);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; const l = live.current; live.current = null; if (l) { l.stream.getTracks().forEach(t => t.stop()); window.clearInterval(l.meter); window.clearTimeout(l.stopTimer); void l.audio.close(); } }; }, []);
 
   async function begin() {
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") { handlers.current.onError("This browser can't record. Use Chrome."); return; }
+    if (starting.current) return;
+    starting.current = true;
     let stream: MediaStream;
     try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
-    catch { handlers.current.onError("Microphone blocked. Allow it in Chrome's site settings."); return; }
+    catch { starting.current = false; if (alive.current) handlers.current.onError("Microphone blocked. Allow it in Chrome's site settings."); return; }
+    starting.current = false;
+    if (!alive.current) { stream.getTracks().forEach(t => t.stop()); return; }
     const type = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"].find(t => MediaRecorder.isTypeSupported(t));
     const recorder = new MediaRecorder(stream, type ? { mimeType: type } : undefined);
     const chunks: Blob[] = [];

@@ -74,6 +74,29 @@ test("lab AI: a payslip photo is compared with the logged hours", async ({ page 
   await expect(page.getByText("957 kr", { exact: false })).toBeVisible();
 });
 
+test("lab AI: leaving the Week tab while the mic permission is pending never starts a recording", async ({ page }) => {
+  await withKey(page);
+  await page.addInitScript(() => {
+    const real = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+    const w = window as unknown as { tracks: MediaStreamTrack[] };
+    w.tracks = [];
+    navigator.mediaDevices.getUserMedia = async constraints => {
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      const stream = await real(constraints);
+      w.tracks.push(...stream.getTracks());
+      return stream;
+    };
+  });
+  await page.goto("/lab");
+  await page.getByRole("button", { name: "Week", exact: true }).click();
+  await page.getByRole("button", { name: "Ask by voice" }).click();
+  await page.getByRole("button", { name: "Today", exact: true }).click();
+  await page.waitForTimeout(2500);
+  const states = await page.evaluate(() => (window as unknown as { tracks: MediaStreamTrack[] }).tracks.map(t => t.readyState));
+  expect(states.length).toBeGreaterThan(0);
+  expect(states.every(state => state === "ended")).toBe(true);
+});
+
 test.describe("lab: forgot to start", () => {
   test("starting 20 minutes late offers the usual start time", async ({ page }) => {
     await page.clock.setFixedTime(new Date("2026-11-13T06:05:00Z")); // Friday 07:05 in Copenhagen
