@@ -42,6 +42,9 @@ const RECENT: RecentShift[] = [
 type DayMark = "worked" | "syg" | "fri";
 const SCENE_KEY = "routehours:lab-wallpaper";
 const LAYOUT_KEY = "routehours:lab-layout";
+const FONT_KEY = "routehours:lab-font";
+type FontId = "clean" | "soft" | "editorial";
+const FONTS: { value: FontId; label: string }[] = [{ value: "clean", label: "Clean" }, { value: "soft", label: "Soft" }, { value: "editorial", label: "Editorial" }];
 const LAYOUTS: { value: Layout; label: string }[] = [{ value: "horizon", label: "Horizon" }, { value: "card", label: "Card" }, { value: "bento", label: "Tiles" }];
 /** Auto wallpaper: dawn sea in the morning, desert by day, dusk hills in the evening, the fjord at night. */
 function sceneForHour(hour: number): SceneId { return hour >= 5 && hour < 10 ? "ocean" : hour >= 10 && hour < 16 ? "desert" : hour >= 16 && hour < 21 ? "dusk" : "fjord"; }
@@ -53,10 +56,12 @@ export default function Lab() {
   const sceneId: SceneId = choice === "auto" ? (hourNow < 0 ? "dusk" : sceneForHour(hourNow)) : choice;
   const scene = SCENES.find(s => s.id === sceneId) ?? SCENES[0];
   const [layout, setLayout] = useState<Layout>("horizon");
+  const [font, setFont] = useState<FontId>("clean");
   const look = scene.tone;
   useEffect(() => {
     try {
       const stored = localStorage.getItem(SCENE_KEY); if (stored && (stored === "auto" || SCENES.some(s => s.id === stored))) setChoice(stored as SceneId | "auto");
+      const storedFont = localStorage.getItem(FONT_KEY); if (storedFont && FONTS.some(f => f.value === storedFont)) setFont(storedFont as FontId);
       const storedLayout = localStorage.getItem(LAYOUT_KEY); if (storedLayout && LAYOUTS.some(l => l.value === storedLayout)) setLayout(storedLayout as Layout);
     } catch { /* private mode: keep the defaults */ }
   }, []);
@@ -94,6 +99,10 @@ export default function Lab() {
   }, [scene]);
 
   // The sky colours blend on their own. Only a switch between a dark and a light scene changes the text colours, so that one crossfades the page.
+  function changeFont(next: FontId) {
+    tick(); setFont(next);
+    try { localStorage.setItem(FONT_KEY, next); } catch { /* not saved, still applied */ }
+  }
   function changeLayout(next: Layout) {
     tick(); setLayout(next);
     try { localStorage.setItem(LAYOUT_KEY, next); } catch { /* not saved, still applied */ }
@@ -174,7 +183,7 @@ export default function Lab() {
   const running = phase === "running";
   return <LazyMotion features={domMax}>
     <MotionConfig reducedMotion={reduce ? "always" : "user"}>
-      <div className={`look ${styles.lab}`} data-look={look} data-state={running ? "running" : "idle"} data-blur={blur ? "on" : "off"} data-motion={reduce ? "reduced" : "full"} style={{ ["--number-weight" as string]: weight }}>
+      <div className={`look ${styles.lab}`} data-look={look} data-font={font} data-state={running ? "running" : "idle"} data-blur={blur ? "on" : "off"} data-motion={reduce ? "reduced" : "full"} style={{ ["--number-weight" as string]: weight }}>
         <Wallpaper scene={sceneId} state={running && !breaks.some(b => !b.end) ? "running" : "idle"}/>
         <AnimatePresence mode="wait" initial={true}>
           <m.main key={tab} className={styles.page} variants={screen} initial="hidden" animate="show" exit="leave">
@@ -218,9 +227,10 @@ export default function Lab() {
               </m.header>
               <m.section variants={item}>
                 <Glass blur className={styles.card}>
-                  <div className={styles.cardHead}><h2 className={`${styles.cardTitle} serif`}>Today layout</h2><span className={styles.cardMeta}>Three ideas</span></div>
+                  <div className={styles.cardHead}><h2 className={`${styles.cardTitle} serif`}>Layout and font</h2></div>
                   <SegmentedControl label="Today layout" value={layout} onChange={changeLayout} options={LAYOUTS}/>
                   <p className={styles.hint}>{layout === "card" ? "One glass card, like a phone widget." : layout === "bento" ? "Small tiles: week, today, break, finish time." : "The sky stays open; everything sits on one sheet."}</p>
+                  <Row label="Font" hint={font === "clean" ? "Crisp, like iOS" : font === "soft" ? "Round and friendly" : "Serif titles, magazine feel"}><SegmentedControl label="Font" value={font} onChange={changeFont} options={FONTS}/></Row>
                   <Button variant="glass" size="small" onClick={() => changeTab("today")}>See it on Today</Button>
                 </Glass>
               </m.section>

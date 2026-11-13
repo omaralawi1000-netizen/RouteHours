@@ -26,6 +26,10 @@ export function clockTime(ms: number) { return new Intl.DateTimeFormat("en-GB", 
 const GOAL_MINUTES = 37 * 60;
 /** EU driving rules: a 45-minute break is due after 4 h 30 min of driving. */
 const BREAK_AFTER = 270;
+/** Omar's hourly rate, for a before-tax pay estimate. Lab only for now. */
+export const RATE = 180;
+const krFormat = new Intl.NumberFormat("da-DK", { maximumFractionDigits: 0 });
+export function kr(minutes: number) { return `${krFormat.format(Math.round(minutes / 60 * RATE))} kr`; }
 export const USUAL = { minutes: 450, label: "Route 2A", start: "06:00" };
 
 /** The Today screen as Headlight would draw it, wired to the lab's pretend data. */
@@ -63,7 +67,7 @@ export default function Today(props: {
 
   const idle = phase === "idle";
   const eyebrowText = onBreak ? "On break" : idle ? "This week" : "On shift";
-  const metaText = idle ? `${shifts} shifts · ${hm(todayMinutes)} today` : props.note ?? `Since ${clockTime(startedAt)}`;
+  const metaText = idle ? `≈ ${kr(weekMinutes)} before tax` : `≈ ${kr(elapsed / 60000)} so far`;
   const swap = { initial: { opacity: 0, y: 6 }, animate: { opacity: 1, y: 0 }, exit: { opacity: 0, y: -6, transition: fade }, transition: spring.snappy };
   const eyebrow = <AnimatePresence mode="popLayout" initial={false}><m.p key={eyebrowText} className={styles.eyebrow} {...swap}>{eyebrowText}</m.p></AnimatePresence>;
   const bigNumber = <m.div ref={number} key={chipPulse} className={styles.heroNumber} initial={chipPulse ? { scale: 1.06 } : false} animate={{ scale: 1 }} transition={spring.reward}>

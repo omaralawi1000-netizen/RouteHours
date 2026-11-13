@@ -17,8 +17,12 @@
  * Day dark on amber 7.3:1, secondary 5.3:1.
  */
 .look {
-  --font-serif: var(--font-instrument-serif), "Iowan Old Style", Georgia, serif;
-  --font-sans: var(--font-geist), system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-sans: var(--font-inter-tight), system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-serif: var(--font-sans);
+  --title-style: normal;
+  --title-weight: 600;
+  --title-tracking: -0.035em;
+  --title-scale: 0.8;
   --radius-card: 28px;
   --radius-sheet: 28px;
   --radius-pill: 999px;
@@ -84,6 +88,9 @@
   --glow-run: 255 178 120;
   --glow-run-strength: 0.35;
 }
+/* Font pairings. Clean (above) is the default. Titles use the .serif class whichever pairing is on. */
+.look[data-font="soft"] { --font-sans: var(--font-outfit), system-ui, sans-serif; --font-serif: var(--font-sans); --title-weight: 500; --title-tracking: -0.025em; --title-scale: 0.82; }
+.look[data-font="editorial"] { --font-serif: var(--font-fraunces), "Iowan Old Style", Georgia, serif; --title-style: italic; --title-weight: 400; --title-tracking: -0.02em; --title-scale: 0.9; }
 .look *, .look *::before, .look *::after { box-sizing: border-box; }
 .look :where(button, input, textarea, select) { font: inherit; color: inherit; }
 .look :where(button) { -webkit-user-select: none; user-select: none; touch-action: manipulation; }
@@ -91,7 +98,7 @@
 .look :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .look :focus:not(:focus-visible) { outline: none; }
 .numeric { font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; }
-.serif { font-family: var(--font-serif); font-style: italic; font-weight: 400; letter-spacing: -0.01em; }
+.serif { font-family: var(--font-serif); font-style: var(--title-style, italic); font-weight: var(--title-weight, 400); letter-spacing: var(--title-tracking, -0.01em); font-variation-settings: "SOFT" 100; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 body:has(.look) { margin: 0; background: var(--page-bg, #0A0C11); overscroll-behavior-y: none; }
 ::view-transition-old(root), ::view-transition-new(root) { animation-duration: 0.28s; animation-timing-function: cubic-bezier(0.2, 0, 0, 1); }
