@@ -62,8 +62,8 @@ test.describe("lab: the usual split day", () => {
     await page.goto("/lab");
     await expect(page.getByText("Nothing logged today. Was it your usual day?")).toBeVisible();
     await page.getByRole("button", { name: "Log it" }).click();
-    await expect(page.getByText("Usual day logged · 5:00")).toBeVisible();
-    await expect(page.locator(`[aria-label="20:07 worked this week"]`)).toBeVisible();
+    await expect(page.getByText("Usual day logged · 3:45")).toBeVisible();
+    await expect(page.locator(`[aria-label="18:52 worked this week"]`)).toBeVisible();
     await expect(page.getByText("Nothing logged today. Was it your usual day?")).toBeHidden();
   });
 });

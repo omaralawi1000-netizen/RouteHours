@@ -15,6 +15,7 @@ export const REMINDERS = [
   { id: "morning-start", time: minus(MORNING.start, 5), action: "start", title: `Morning shift at ${MORNING.start}`, body: "Tap Start shift when you pull out." },
   { id: "morning-end", time: MORNING.end, action: "finish", title: "End of the morning run?", body: `Usually done at ${MORNING.end}. Tap Finish shift.` },
   { id: "afternoon-start", time: minus(AFTERNOON.start, 5), action: "start", title: `Afternoon shift at ${AFTERNOON.start}`, body: "Tap Start shift when you pull out." },
+  { id: "afternoon-end", time: AFTERNOON.end, action: "finish", title: "End of the afternoon run?", body: `Usually done at ${AFTERNOON.end}. Tap Finish shift.` },
 ] as const;
 const KEY = "routehours:lab-reminders";
 

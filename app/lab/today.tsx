@@ -36,14 +36,14 @@ export const USUAL = { minutes: 450, label: "Route 2A", start: "06:00" };
 export type DayPart = { id: "morning" | "afternoon"; label: string; start: string; end: string; minutes: number };
 export const DAY_PARTS: DayPart[] = [
   { id: "morning", label: "Morning", start: "06:45", end: "08:10", minutes: 85 },
-  { id: "afternoon", label: "Afternoon", start: "12:25", end: "16:00", minutes: 215 },
+  { id: "afternoon", label: "Afternoon", start: "12:25", end: "14:45", minutes: 140 },
 ];
 const toMinutes = (time: string) => { const [h, m] = time.split(":").map(Number); return h * 60 + m; };
 export function copenhagenMinutes(at = Date.now()) { const [h, m] = clockTime(at).split(":").map(Number); return h * 60 + m; }
-/** The part of the usual day that comes next: Morning until 10:30, Afternoon until 15:00, then none. */
+/** The part of the usual day that comes next: Morning until 10:30, Afternoon until 14:00, then none. */
 export function nextPart(at = Date.now()): DayPart | null {
   const now = copenhagenMinutes(at);
-  return now < toMinutes("10:30") ? DAY_PARTS[0] : now < toMinutes("15:00") ? DAY_PARTS[1] : null;
+  return now < toMinutes("10:30") ? DAY_PARTS[0] : now < toMinutes("14:00") ? DAY_PARTS[1] : null;
 }
 export const usualDayMinutes = DAY_PARTS.reduce((sum, p) => sum + p.minutes, 0);
 export type Alert = { id: string; text: string; action?: { label: string; onClick: () => void } };
@@ -143,7 +143,7 @@ export default function Today(props: {
   const alerts: Alert[] = [];
   if (running && elapsed > 10 * 3600000) alerts.push({ id: "long", text: "This shift has run over 10 hours. Forgot to finish?", action: { label: "Finish", onClick: props.onFinish } });
   else if (running && !onBreak && part && clockNow > toMinutes(part.end) + 30) alerts.push({ id: `late-${part.id}`, text: `Your ${part.label.toLowerCase()} run usually ends at ${part.end}. Still driving?`, action: { label: "Finish", onClick: props.onFinish } });
-  if (idle && weekday && !props.dayOff && todayMinutes === 0 && clockNow >= 17 * 60) alerts.push({ id: "empty", text: "Nothing logged today. Was it your usual day?", action: { label: "Log it", onClick: props.onLogUsualDay } });
+  if (idle && weekday && !props.dayOff && todayMinutes === 0 && clockNow >= 15 * 60 + 30) alerts.push({ id: "empty", text: "Nothing logged today. Was it your usual day?", action: { label: "Log it", onClick: props.onLogUsualDay } });
   const alert = hydrated ? alerts.find(a => !dismissed.includes(a.id)) ?? null : null;
   const alertCard = <AnimatePresence initial={false} mode="popLayout">
     {alert && <m.section key={alert.id} layout className={styles.alert} role="status" initial={{ opacity: 0, y: -10, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, scale: 0.96, transition: spring.exit }} transition={spring.settle}>
