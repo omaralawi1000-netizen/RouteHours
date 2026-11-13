@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, m } from "motion/react";
-import { Bus, ChevronRight, Coffee, FastForward, Flag, Play, Plus, Settings2, Square, Sun } from "lucide-react";
+import { Bus, ChevronRight, Coffee, FastForward, Flag, Play, Plus, Settings2, Square, Sun, TriangleAlert, X } from "lucide-react";
 import { useNow } from "../features/use-now";
 import Button from "../ui/button";
 import Glass from "../ui/glass";
@@ -32,11 +32,27 @@ export const RATE = 180;
 const krFormat = new Intl.NumberFormat("da-DK", { maximumFractionDigits: 0 });
 export function kr(minutes: number) { return `${krFormat.format(Math.round(minutes / 60 * RATE))} kr`; }
 export const USUAL = { minutes: 450, label: "Route 2A", start: "06:00" };
+/** Omar's usual working day: a split shift. The afternoon end is a guess until he confirms it. */
+export type DayPart = { id: "morning" | "afternoon"; label: string; start: string; end: string; minutes: number };
+export const DAY_PARTS: DayPart[] = [
+  { id: "morning", label: "Morning", start: "06:45", end: "08:10", minutes: 85 },
+  { id: "afternoon", label: "Afternoon", start: "12:25", end: "16:00", minutes: 215 },
+];
+const toMinutes = (time: string) => { const [h, m] = time.split(":").map(Number); return h * 60 + m; };
+export function copenhagenMinutes(at = Date.now()) { const [h, m] = clockTime(at).split(":").map(Number); return h * 60 + m; }
+/** The part of the usual day that comes next: Morning until 10:30, Afternoon until 15:00, then none. */
+export function nextPart(at = Date.now()): DayPart | null {
+  const now = copenhagenMinutes(at);
+  return now < toMinutes("10:30") ? DAY_PARTS[0] : now < toMinutes("15:00") ? DAY_PARTS[1] : null;
+}
+export const usualDayMinutes = DAY_PARTS.reduce((sum, p) => sum + p.minutes, 0);
+export type Alert = { id: string; text: string; action?: { label: string; onClick: () => void } };
 
 /** The Today screen as Headlight would draw it, wired to the lab's pretend data. */
 export default function Today(props: {
   phase: Phase; startedAt: number; endedAt: number; weekMinutes: number; todayMinutes: number; chipPulse: number; dateLabel: string;
   saved: string | null; note?: string; layout: Layout; recent: RecentShift[]; mic: MicState; level: number; micSeconds: number; breaks: Break[]; weekDays: DayBar[];
+  dayOff?: boolean; onLogUsualDay: () => void;
   onBreak: () => void; onStartUsual: () => void; onUndo: () => void; onStart: () => void; onFinish: () => void; onFastForward: () => void; onMic: () => void; onAddPast: () => void; onOpenShift: (shift: RecentShift) => void; onSettings: () => void;
 }) {
   const { phase, startedAt, endedAt, weekMinutes, todayMinutes, chipPulse, dateLabel, saved, recent } = props;
@@ -51,7 +67,15 @@ export default function Today(props: {
   const lastBreakEnd = breaks.filter(b => b.end && b.end - b.start >= 15 * 60000).reduce((last, b) => Math.max(last, b.end ?? 0), startedAt);
   const drivingSince = (end - lastBreakEnd) / 60000;
   const dueIn = BREAK_AFTER - drivingSince;
-  const expectedEnd = startedAt + USUAL.minutes * 60000 + breakMs;
+  const part = DAY_PARTS.find(p => p.label === props.note);
+  const usualMinutes = part?.minutes ?? USUAL.minutes;
+  const expectedEnd = startedAt + usualMinutes * 60000 + breakMs;
+  const clock = useNow(60_000);
+  // Time-of-day text waits for the phone's clock, so the page built on the server never disagrees with it.
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => setHydrated(true), []);
+  const upcoming = hydrated ? nextPart(clock) : null;
+  const [dismissed, setDismissed] = useState<string[]>([]);
   const number = useRef<HTMLDivElement>(null);
   const [blooms, setBlooms] = useState<number[]>([]);
   const shifts = recent.filter(r => r.day !== "Last week").length;
@@ -62,7 +86,7 @@ export default function Today(props: {
 
   const left = Math.max(0, GOAL_MINUTES - weekMinutes);
   const hour = new Date().getHours();
-  const greeting = onBreak ? "On a break" : running ? "On the road" : hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  const greeting = onBreak ? "On a break" : running ? "On the road" : !hydrated ? "Hello" : hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
 
   function press() {
     setBlooms(list => [...list, Date.now()]);
@@ -89,7 +113,7 @@ export default function Today(props: {
     </m.p>
   </AnimatePresence>;
   const breakDueAt = onBreak ? null : end + dueIn * 60000;
-  const shiftLine = <RouteLine startedAt={startedAt} now={end} breaks={breaks} usualMinutes={USUAL.minutes} breakDueAt={breakDueAt !== null && breakDueAt < expectedEnd ? breakDueAt : null} paused={onBreak} startLabel={clockTime(startedAt)} endLabel={`~${clockTime(expectedEnd)}`}/>;
+  const shiftLine = <RouteLine startedAt={startedAt} now={end} breaks={breaks} usualMinutes={usualMinutes} breakDueAt={breakDueAt !== null && breakDueAt < expectedEnd ? breakDueAt : null} paused={onBreak} startLabel={clockTime(startedAt)} endLabel={`~${clockTime(expectedEnd)}`}/>;
   const due = !onBreak && dueIn <= 0;
   const liveStats = <div className={styles.liveStats}>
     <m.div layout className={`${styles.liveStat} ${due ? styles.liveHot : ""}`} transition={spring.snappy}>
@@ -112,6 +136,23 @@ export default function Today(props: {
     <div className={styles.heroHead}>{eyebrow}<span className={`${styles.heroMeta} numeric`}>{metaText}</span></div>
     {bigNumber}{under}{visual}
   </>;
+
+  // "Something's off" checks: one calm card at a time, each with the fix one tap away.
+  const clockNow = copenhagenMinutes(running ? now : clock);
+  const weekday = new Date(clock).getDay() % 6 !== 0;
+  const alerts: Alert[] = [];
+  if (running && elapsed > 10 * 3600000) alerts.push({ id: "long", text: "This shift has run over 10 hours. Forgot to finish?", action: { label: "Finish", onClick: props.onFinish } });
+  else if (running && !onBreak && part && clockNow > toMinutes(part.end) + 30) alerts.push({ id: `late-${part.id}`, text: `Your ${part.label.toLowerCase()} run usually ends at ${part.end}. Still driving?`, action: { label: "Finish", onClick: props.onFinish } });
+  if (idle && weekday && !props.dayOff && todayMinutes === 0 && clockNow >= 17 * 60) alerts.push({ id: "empty", text: "Nothing logged today. Was it your usual day?", action: { label: "Log it", onClick: props.onLogUsualDay } });
+  const alert = hydrated ? alerts.find(a => !dismissed.includes(a.id)) ?? null : null;
+  const alertCard = <AnimatePresence initial={false} mode="popLayout">
+    {alert && <m.section key={alert.id} layout className={styles.alert} role="status" initial={{ opacity: 0, y: -10, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, scale: 0.96, transition: spring.exit }} transition={spring.settle}>
+      <span className={styles.alertIcon}><TriangleAlert aria-hidden="true"/></span>
+      <p className={styles.alertText}>{alert.text}</p>
+      {alert.action && <Button variant="glass" size="small" onClick={() => { setDismissed(list => [...list, alert.id]); alert.action?.onClick(); }}>{alert.action.label}</Button>}
+      <button type="button" className={styles.alertClose} aria-label="Dismiss" onClick={() => setDismissed(list => [...list, alert.id])}><X aria-hidden="true"/></button>
+    </m.section>}
+  </AnimatePresence>;
 
   const header = <m.header variants={item} className={`${styles.top} ${layout === "horizon" ? styles.topTall : ""}`}>
     <div>
@@ -145,7 +186,7 @@ export default function Today(props: {
             <AnimatePresence mode="popLayout" initial={false}>
               {running
                 ? <m.div key="break" {...pop}><Button variant="glass" size="small" icon={onBreak ? <Play/> : <Coffee/>} onClick={props.onBreak}>{onBreak ? "Resume" : "Break"}</Button></m.div>
-                : <m.div key="usual" {...pop}><Button variant="glass" size="small" icon={<Bus/>} onClick={props.onStartUsual} aria-label={`Start your usual ${USUAL.label} shift`}>{USUAL.label}</Button></m.div>}
+                : <m.div key="usual" {...pop}><Button variant="glass" size="small" icon={<Bus/>} onClick={props.onStartUsual} aria-label={upcoming ? `Start your ${upcoming.label.toLowerCase()} shift` : "Log your usual day"}>{upcoming ? <>{upcoming.label} <span className="numeric">{upcoming.start}</span></> : "Usual day"}</Button></m.div>}
             </AnimatePresence>
             <MicPill state={props.mic} level={props.level} seconds={props.micSeconds} onToggle={props.onMic}/>
             <AnimatePresence mode="popLayout" initial={false}>
@@ -176,6 +217,7 @@ export default function Today(props: {
 
   if (layout === "focus") return <div className={`${styles.screen} ${styles.focusScreen}`}>
     {header}
+    {alertCard}
     <m.section variants={item} className={styles.focusMain}>
       <Glass blur className={`${styles.heroCard} ${styles.focusHero} ${running ? styles.heroLive : ""}`}>
         <div className={styles.heroHead}>{eyebrow}<span className={`${styles.payPill} numeric`}>{metaText}</span></div>
@@ -210,6 +252,7 @@ export default function Today(props: {
 
   if (layout === "horizon") return <div className={styles.screen}>
     {header}
+    {alertCard}
     <m.section variants={item} className={styles.horizonWrap}>
       <Glass blur className={`${styles.sheetPanel} ${running ? styles.heroLive : ""}`}>
         <span className={styles.grabber} aria-hidden="true"/>
@@ -222,6 +265,7 @@ export default function Today(props: {
 
   if (layout === "bento") return <div className={styles.screen}>
     {header}
+    {alertCard}
     <m.section variants={item} className={styles.bento}>
       <Glass blur className={`${styles.tile} ${styles.tileWide} ${running ? styles.heroLive : ""}`}>
         <div className={styles.heroHead}>{eyebrow}<span className={`${styles.heroMeta} numeric`}>{metaText}</span></div>
@@ -258,6 +302,7 @@ export default function Today(props: {
 
   return <div className={styles.screen}>
     {header}
+    {alertCard}
     <m.section variants={item}><Glass blur className={`${styles.heroCard} ${running ? styles.heroLive : ""}`}>{heroInner}</Glass></m.section>
     {actions}
     <m.section variants={item}><Glass blur className={styles.card}>{recentInner}</Glass></m.section>

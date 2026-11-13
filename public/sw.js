@@ -1,4 +1,4 @@
-const CACHE = "routehours-shell-v9";
+const CACHE = "routehours-shell-v10";
 const SHELL = ["/", "/manifest.webmanifest", "/icon-192-v3.png", "/icon-512-v3.png", "/icon-maskable-v3.png", "/apple-icon-v3.png"];
 
 self.addEventListener("install", event => {
@@ -43,4 +43,29 @@ self.addEventListener("fetch", event => {
     }
     return response;
   })));
+});
+
+// Shift reminders. The server sends { title, body, tag, action }; the buttons act without opening a menu.
+self.addEventListener("push", event => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch { data = { title: "RouteHours", body: event.data ? event.data.text() : "" }; }
+  const actions = data.action === "finish"
+    ? [{ action: "finish", title: "Finish shift" }, { action: "open", title: "Still driving" }]
+    : data.action === "start" ? [{ action: "start", title: "Start shift" }, { action: "skip", title: "Not today" }] : [];
+  event.waitUntil(self.registration.showNotification(data.title || "RouteHours", {
+    body: data.body || "", tag: data.tag || "routehours", renotify: true, icon: "/icon-192-v3.png", badge: "/icon-192-v3.png",
+    actions, data: { action: data.action || "open" },
+  }));
+});
+
+self.addEventListener("notificationclick", event => {
+  event.notification.close();
+  const chosen = event.action || "open";
+  if (chosen === "skip") return;
+  const target = new URL(`/lab?do=${encodeURIComponent(chosen === "open" ? "open" : chosen)}`, self.location.origin).href;
+  event.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(list => {
+    const open = list.find(client => new URL(client.url).pathname.startsWith("/lab"));
+    if (open) { open.postMessage({ type: "REMINDER_ACTION", action: chosen }); return open.focus(); }
+    return self.clients.openWindow(target);
+  }));
 });

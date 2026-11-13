@@ -21,7 +21,8 @@ import { type DayBar } from "../ui/week-bars";
 import WeekStrip, { type WeekData } from "../ui/week-strip";
 import { setHaptics, tick } from "../ui/haptics";
 import { spring, springSpec, type SpringName } from "../ui/motion";
-import Today, { clockTime, hm, USUAL, type Layout, type Phase, type RecentShift } from "./today";
+import Today, { clockTime, DAY_PARTS, hm, nextPart, usualDayMinutes, type Layout, type Phase, type RecentShift } from "./today";
+import Reminders from "./reminders";
 import { item, screen } from "./stagger";
 import styles from "./lab.module.css";
 
@@ -120,7 +121,19 @@ export default function Lab() {
   const [breaks, setBreaks] = useState<Break[]>([]);
   const [note, setNote] = useState<string | undefined>();
   function start(withNote?: string) { tick(); setSaved(null); setBreaks([]); setNote(withNote); setStartedAt(Date.now()); setPhase("running"); }
-  function startUsual() { start(USUAL.label); say(`${USUAL.label} started. Usually ${hm(USUAL.minutes)}.`); }
+  function startUsual() {
+    const part = nextPart();
+    if (!part) { logUsualDay(); return; }
+    start(part.label); say(`${part.label} shift started. Usually done at ${part.end}.`);
+  }
+  // Logs the whole usual split day in one go, for days you forgot to press Start.
+  function logUsualDay() {
+    tick();
+    const id = Date.now(), minutes = usualDayMinutes;
+    const entry: RecentShift = { id, day: "Today", start: DAY_PARTS[0].start, end: DAY_PARTS[1].end, minutes, note: `${DAY_PARTS[0].start}–${DAY_PARTS[0].end} + ${DAY_PARTS[1].start}–${DAY_PARTS[1].end}` };
+    setRecent(list => [entry, ...list]); setWeekMinutes(total => total + minutes); setTodayMinutes(total => total + minutes); setChipPulse(p => p + 1);
+    say(`Usual day logged · ${hm(minutes)}`, { label: "Undo", onClick: () => { setRecent(list => list.filter(s => s.id !== id)); setWeekMinutes(total => total - minutes); setTodayMinutes(total => total - minutes); say("Removed"); } });
+  }
   function toggleBreak() {
     tick();
     const open = breaks.some(b => !b.end);
@@ -140,6 +153,19 @@ export default function Lab() {
     });
     later(8000, () => setSaved(current => current?.id === id ? null : current));
   }
+  // A tap on a reminder's button lands here: from the link it opened (?do=start) or a message from the service worker.
+  const fromReminder = useRef<(action: string) => void>(() => {});
+  useEffect(() => { fromReminder.current = action => {
+    if (action === "start") { if (phase === "running") say("Already on shift"); else { const part = nextPart(); start(part?.label); say(part ? `${part.label} shift started from your reminder` : "Shift started from your reminder"); } }
+    else if (action === "finish") { if (phase === "running") finish(); else say("No shift is running"); }
+  }; });
+  useEffect(() => {
+    const params = new URLSearchParams(location.search), action = params.get("do");
+    if (action) { history.replaceState(null, "", location.pathname); window.setTimeout(() => fromReminder.current(action), 600); }
+    const onMessage = (event: MessageEvent) => { if (event.data?.type === "REMINDER_ACTION") fromReminder.current(String(event.data.action)); };
+    navigator.serviceWorker?.addEventListener("message", onMessage);
+    return () => navigator.serviceWorker?.removeEventListener("message", onMessage);
+  }, []);
   function undoFinish() {
     if (!saved) return;
     setWeekMinutes(total => total - saved.minutes); setTodayMinutes(total => total - saved.minutes);
@@ -189,7 +215,7 @@ export default function Lab() {
           <m.main key={tab} className={styles.page} variants={screen} initial="hidden" animate="show" exit="leave">
             {tab === "today" && <Today phase={phase} startedAt={startedAt} endedAt={endedAt} weekMinutes={weekMinutes} todayMinutes={todayMinutes} chipPulse={chipPulse} dateLabel={dateLabel}
               saved={saved ? `${hm(saved.minutes)} added to this week` : null} recent={recent} mic={mic} level={level} micSeconds={micSeconds}
-              layout={layout} note={note} breaks={breaks} weekDays={weekDays} onBreak={toggleBreak} onStartUsual={startUsual}
+              layout={layout} note={note} breaks={breaks} weekDays={weekDays} onBreak={toggleBreak} onStartUsual={startUsual} onLogUsualDay={logUsualDay} dayOff={mark !== "worked"}
               onUndo={undoFinish} onStart={() => start()} onFinish={finish} onFastForward={() => { setStartedAt(value => value - 3_600_000); setBreaks(list => list.map(b => ({ start: b.start - 3_600_000, end: b.end && b.end - 3_600_000 }))); }} onMic={toggleMic}
               onAddPast={() => setEditing({ id: -1, day: "New", start: "06:00", end: "14:00", minutes: 480 })} onOpenShift={setEditing} onSettings={() => changeTab("lab")}/>}
 
@@ -225,6 +251,7 @@ export default function Lab() {
               <m.header variants={item} className={styles.top}>
                 <div><p className={styles.eyebrow}>Headlight lab</p><h1 className={`${styles.title} serif`}>Tune the look</h1></div>
               </m.header>
+              <m.section variants={item}><Reminders say={say}/></m.section>
               <m.section variants={item}>
                 <Glass blur className={styles.card}>
                   <div className={styles.cardHead}><h2 className={`${styles.cardTitle} serif`}>Layout and font</h2></div>

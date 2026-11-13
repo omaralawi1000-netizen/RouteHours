@@ -26,7 +26,7 @@ export default function RouteLine({ startedAt, now, breaks, usualMinutes, breakD
     <div className={styles.line}>
       <m.div className={styles.beam} initial={false} animate={{ left: pct(progress), opacity: paused ? 0 : 1 }} transition={spring.smooth} aria-hidden="true"/>
       <m.div className={styles.light} initial={false} animate={{ left: pct(progress), opacity: paused ? 0.35 : 1 }} transition={spring.smooth} aria-hidden="true"/>
-      <div className={styles.ahead}/>
+      <div className={styles.ahead} style={{ left: pct(progress) }}/>
       <m.div className={styles.done} initial={false} animate={{ scaleX: progress }} transition={spring.smooth}/>
       {breaks.map((b, i) => <div key={`g${i}`} className={styles.gap} style={{ left: pct(at(b.start)), width: pct(Math.max(0.012, at(b.end ?? now) - at(b.start))) }}/>)}
       <span className={`${styles.stop} ${styles.end} ${styles.passed}`} style={{ left: "0%" }}/>
