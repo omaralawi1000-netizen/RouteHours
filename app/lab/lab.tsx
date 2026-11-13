@@ -116,11 +116,26 @@ export default function Lab() {
     if (nextTone !== look && doc.startViewTransition && !reduce && !matchMedia("(prefers-reduced-motion: reduce)").matches) doc.startViewTransition(() => flushSync(() => setChoice(next)));
     else setChoice(next);
   }
-  function changeTab(next: TabId) { setTab(next); window.scrollTo({ top: 0, behavior: reduce ? "auto" : "smooth" }); }
+  const TAB_ORDER: TabId[] = ["today", "week", "lab"];
+  const [direction, setDirection] = useState(1);
+  const [opened, setOpened] = useState(false);
+  // Pages are drawn only once the phone has the page, so nothing on them changes or jumps a moment
+  // later (greeting, checks, chips); the wallpaper and tab bar are there from the very first frame.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  function changeTab(next: TabId) {
+    if (next === tab) return;
+    setOpened(true);
+    setDirection(TAB_ORDER.indexOf(next) > TAB_ORDER.indexOf(tab) ? 1 : -1);
+    setTab(next);
+    // Jump, don't scroll: the new page slides in at its top while the old one slides away.
+    window.scrollTo({ top: 0, behavior: "auto" });
+  }
 
   const [breaks, setBreaks] = useState<Break[]>([]);
   const [note, setNote] = useState<string | undefined>();
-  function start(withNote?: string) { tick(); setSaved(null); setBreaks([]); setNote(withNote); setStartedAt(Date.now()); setPhase("running"); }
+  const [stillDriving, setStillDriving] = useState(false);
+  function start(withNote?: string) { tick(); setSaved(null); setBreaks([]); setNote(withNote); setStillDriving(false); setStartedAt(Date.now()); setPhase("running"); }
   function startUsual() {
     const part = nextPart();
     if (!part) { logUsualDay(); return; }
@@ -140,15 +155,17 @@ export default function Lab() {
     setBreaks(list => open ? list.map(b => b.end ? b : { ...b, end: Date.now() }) : [...list, { start: Date.now() }]);
     if (open) say("Back on the road");
   }
-  function finish() {
+  function finish(at?: number, message?: string) {
     tick();
-    const end = Date.now(), breakMs = breaks.reduce((sum, b) => sum + ((b.end ?? end) - b.start), 0), id = end;
+    const end = at ?? Date.now(), breakMs = breaks.reduce((sum, b) => sum + ((b.end ?? end) - b.start), 0), id = end;
     const minutes = Math.max(1, Math.round((end - startedAt - breakMs) / 60000));
     setBreaks(list => list.map(b => b.end ? b : { ...b, end }));
     setEndedAt(end); setPhase("landing");
     later(420, () => { setWeekMinutes(total => total + minutes); setTodayMinutes(total => total + minutes); setChipPulse(p => p + 1); });
+    const record = { minutes, startedAt, id };
     later(1100, () => {
-      setPhase("idle"); setSaved({ minutes, startedAt, id });
+      setPhase("idle"); setSaved(record);
+      say(message ?? `Shift saved · ${hm(minutes)} added`, { label: "Undo", onClick: () => undoShift(record) });
       setRecent(list => [{ id, day: "Today", start: clockTime(startedAt), end: clockTime(end), minutes, note }, ...list]);
     });
     later(8000, () => setSaved(current => current?.id === id ? null : current));
@@ -158,6 +175,7 @@ export default function Lab() {
   useEffect(() => { fromReminder.current = action => {
     if (action === "start") { if (phase === "running") say("Already on shift"); else { const part = nextPart(); start(part?.label); say(part ? `${part.label} shift started from your reminder` : "Shift started from your reminder"); } }
     else if (action === "finish") { if (phase === "running") finish(); else say("No shift is running"); }
+    else if (action === "still") { if (phase === "running") keepDriving(); else say("No shift is running"); }
   }; });
   useEffect(() => {
     const params = new URLSearchParams(location.search), action = params.get("do");
@@ -166,13 +184,15 @@ export default function Lab() {
     navigator.serviceWorker?.addEventListener("message", onMessage);
     return () => navigator.serviceWorker?.removeEventListener("message", onMessage);
   }, []);
-  function undoFinish() {
-    if (!saved) return;
-    setWeekMinutes(total => total - saved.minutes); setTodayMinutes(total => total - saved.minutes);
-    setRecent(list => list.filter(shift => shift.id !== saved.id));
-    setStartedAt(saved.startedAt); setBreaks(list => list.map((b, i) => i === list.length - 1 && b.end === saved.id ? { start: b.start } : b)); setPhase("running"); setSaved(null);
+  function keepDriving() { setStillDriving(true); say("Got it. It won't finish on its own this run."); }
+  function autoFinish(at: number) { finish(at, `Finished on its own at ${clockTime(at)}`); }
+  function undoShift(record: { minutes: number; startedAt: number; id: number }) {
+    setWeekMinutes(total => total - record.minutes); setTodayMinutes(total => total - record.minutes);
+    setRecent(list => list.filter(shift => shift.id !== record.id));
+    setStartedAt(record.startedAt); setBreaks(list => list.map((b, i) => i === list.length - 1 && b.end === record.id ? { start: b.start } : b)); setPhase("running"); setSaved(null);
     say("Shift resumed");
   }
+  function undoFinish() { if (saved) undoShift(saved); }
 
   const [status, setStatus] = useState<WeekStatus>("reviewed");
   const [statusPulse, setStatusPulse] = useState(0);
@@ -211,12 +231,13 @@ export default function Lab() {
     <MotionConfig reducedMotion={reduce ? "always" : "user"}>
       <div className={`look ${styles.lab}`} data-look={look} data-font={font} data-state={running ? "running" : "idle"} data-blur={blur ? "on" : "off"} data-motion={reduce ? "reduced" : "full"} style={{ ["--number-weight" as string]: weight }}>
         <Wallpaper scene={sceneId} state={running && !breaks.some(b => !b.end) ? "running" : "idle"}/>
-        <AnimatePresence mode="wait" initial={true}>
-          <m.main key={tab} className={styles.page} variants={screen} initial="hidden" animate="show" exit="leave">
+        <div className={styles.pages}>
+        <AnimatePresence initial={true} custom={direction}>
+          {mounted && <m.main key={tab} className={styles.page} custom={direction} variants={screen} initial={opened ? "enter" : "hidden"} animate="show" exit="leave">
             {tab === "today" && <Today phase={phase} startedAt={startedAt} endedAt={endedAt} weekMinutes={weekMinutes} todayMinutes={todayMinutes} chipPulse={chipPulse} dateLabel={dateLabel}
-              saved={saved ? `${hm(saved.minutes)} added to this week` : null} recent={recent} mic={mic} level={level} micSeconds={micSeconds}
-              layout={layout} note={note} breaks={breaks} weekDays={weekDays} onBreak={toggleBreak} onStartUsual={startUsual} onLogUsualDay={logUsualDay} dayOff={mark !== "worked"}
-              onUndo={undoFinish} onStart={() => start()} onFinish={finish} onFastForward={() => { setStartedAt(value => value - 3_600_000); setBreaks(list => list.map(b => ({ start: b.start - 3_600_000, end: b.end && b.end - 3_600_000 }))); }} onMic={toggleMic}
+              recent={recent} mic={mic} level={level} micSeconds={micSeconds}
+              layout={layout} note={note} breaks={breaks} weekDays={weekDays} onBreak={toggleBreak} onStartUsual={startUsual} onLogUsualDay={logUsualDay} dayOff={mark !== "worked"} stillDriving={stillDriving} onStillDriving={keepDriving} onAutoFinish={autoFinish}
+              onUndo={undoFinish} onStart={() => start()} onFinish={() => finish()} onFastForward={() => { setStartedAt(value => value - 3_600_000); setBreaks(list => list.map(b => ({ start: b.start - 3_600_000, end: b.end && b.end - 3_600_000 }))); }} onMic={toggleMic}
               onAddPast={() => setEditing({ id: -1, day: "New", start: "06:00", end: "14:00", minutes: 480 })} onOpenShift={setEditing} onSettings={() => changeTab("lab")}/>}
 
             {tab === "week" && <>
@@ -307,8 +328,9 @@ export default function Lab() {
                 <p>Rate it 1 to 10 again, and tell me which wallpaper you kept.</p>
               </m.footer>
             </>}
-          </m.main>
+          </m.main>}
         </AnimatePresence>
+        </div>
 
         <TabBar value={tab} onChange={changeTab} tabs={[{ id: "today", label: "Today", icon: <Sun/> }, { id: "week", label: "Week", icon: <CalendarDays/> }, { id: "lab", label: "Lab", icon: <FlaskConical/> }]}/>
 

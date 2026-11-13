@@ -52,9 +52,30 @@ test.describe("lab: the usual split day", () => {
     await page.getByRole("button", { name: "Start your morning shift" }).click();
     await expect(page.getByText("Morning shift started. Usually done at 08:10.")).toBeVisible();
     await page.clock.setFixedTime(new Date("2026-11-13T07:45:00Z")); // 08:45, past 08:10 + 30 min
-    await expect(page.getByText("Your morning run usually ends at 08:10. Still driving?")).toBeVisible({ timeout: 70_000 });
+    await expect(page.getByText("Past 08:10. Still driving? It stops by itself at 09:10.")).toBeVisible({ timeout: 70_000 });
     await page.getByRole("button", { name: "Finish", exact: true }).click();
     await expect(page.getByText("Shift saved")).toBeVisible();
+  });
+
+  test("a morning run nobody finished stops on its own, logged at the usual end", async ({ page }) => {
+    await page.clock.setFixedTime(new Date("2026-11-13T05:45:00Z")); // 06:45
+    await page.goto("/lab");
+    await page.getByRole("button", { name: "Start your morning shift" }).click();
+    await page.clock.setFixedTime(new Date("2026-11-13T08:12:00Z")); // 09:12, past 08:10 + 60 min
+    await expect(page.getByText("Finished on its own at 08:10")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole("button", { name: "Start shift" })).toBeVisible();
+  });
+
+  test("tapping Still driving keeps the run going past the usual end", async ({ page }) => {
+    await page.clock.setFixedTime(new Date("2026-11-13T05:45:00Z"));
+    await page.goto("/lab");
+    await page.getByRole("button", { name: "Start your morning shift" }).click();
+    await page.clock.setFixedTime(new Date("2026-11-13T07:50:00Z")); // 08:50: the question shows, auto-stop not yet
+    await page.getByRole("button", { name: "Still driving" }).click({ timeout: 70_000 });
+    await page.clock.setFixedTime(new Date("2026-11-13T08:30:00Z")); // 09:30
+    await page.waitForTimeout(2500);
+    await expect(page.getByRole("button", { name: "Finish shift" })).toBeVisible();
+    await expect(page.getByText(/finished on its own/i)).toHaveCount(0);
   });
 
   test("on a weekday evening with nothing logged, one tap logs the usual day", async ({ page }) => {

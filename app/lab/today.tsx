@@ -8,7 +8,6 @@ import Button from "../ui/button";
 import Glass from "../ui/glass";
 import MicPill, { type MicState } from "../ui/mic-pill";
 import RollingNumber from "../ui/rolling-number";
-import SavedCard from "../ui/saved-card";
 import RouteLine from "../ui/route-line";
 import { type Break } from "../ui/shift-line";
 import WeekBars, { type DayBar } from "../ui/week-bars";
@@ -32,13 +31,16 @@ export const RATE = 180;
 const krFormat = new Intl.NumberFormat("da-DK", { maximumFractionDigits: 0 });
 export function kr(minutes: number) { return `${krFormat.format(Math.round(minutes / 60 * RATE))} kr`; }
 export const USUAL = { minutes: 450, label: "Route 2A", start: "06:00" };
-/** Omar's usual working day: a split shift. The afternoon end is a guess until he confirms it. */
+/** Omar's usual working day: a split shift. */
 export type DayPart = { id: "morning" | "afternoon"; label: string; start: string; end: string; minutes: number };
 export const DAY_PARTS: DayPart[] = [
   { id: "morning", label: "Morning", start: "06:45", end: "08:10", minutes: 85 },
   { id: "afternoon", label: "Afternoon", start: "12:25", end: "14:45", minutes: 140 },
 ];
 const toMinutes = (time: string) => { const [h, m] = time.split(":").map(Number); return h * 60 + m; };
+const minutesToClock = (t: number) => `${String(Math.floor(t / 60) % 24).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`;
+/** Minutes after a run's usual end before an unfinished shift finishes itself. */
+export const AUTO_FINISH_AFTER = 60;
 export function copenhagenMinutes(at = Date.now()) { const [h, m] = clockTime(at).split(":").map(Number); return h * 60 + m; }
 /** The part of the usual day that comes next: Morning until 10:30, Afternoon until 14:00, then none. */
 export function nextPart(at = Date.now()): DayPart | null {
@@ -46,16 +48,16 @@ export function nextPart(at = Date.now()): DayPart | null {
   return now < toMinutes("10:30") ? DAY_PARTS[0] : now < toMinutes("14:00") ? DAY_PARTS[1] : null;
 }
 export const usualDayMinutes = DAY_PARTS.reduce((sum, p) => sum + p.minutes, 0);
-export type Alert = { id: string; text: string; action?: { label: string; onClick: () => void } };
+export type Alert = { id: string; text: string; action?: { label: string; onClick: () => void }; alt?: { label: string; onClick: () => void } };
 
 /** The Today screen as Headlight would draw it, wired to the lab's pretend data. */
 export default function Today(props: {
   phase: Phase; startedAt: number; endedAt: number; weekMinutes: number; todayMinutes: number; chipPulse: number; dateLabel: string;
-  saved: string | null; note?: string; layout: Layout; recent: RecentShift[]; mic: MicState; level: number; micSeconds: number; breaks: Break[]; weekDays: DayBar[];
-  dayOff?: boolean; onLogUsualDay: () => void;
+  note?: string; layout: Layout; recent: RecentShift[]; mic: MicState; level: number; micSeconds: number; breaks: Break[]; weekDays: DayBar[];
+  dayOff?: boolean; onLogUsualDay: () => void; stillDriving?: boolean; onStillDriving: () => void; onAutoFinish: (at: number) => void;
   onBreak: () => void; onStartUsual: () => void; onUndo: () => void; onStart: () => void; onFinish: () => void; onFastForward: () => void; onMic: () => void; onAddPast: () => void; onOpenShift: (shift: RecentShift) => void; onSettings: () => void;
 }) {
-  const { phase, startedAt, endedAt, weekMinutes, todayMinutes, chipPulse, dateLabel, saved, recent } = props;
+  const { phase, startedAt, endedAt, weekMinutes, todayMinutes, chipPulse, dateLabel, recent } = props;
   const { breaks, layout } = props;
   const running = phase === "running";
   const now = useNow(1000, running);
@@ -72,7 +74,8 @@ export default function Today(props: {
   const expectedEnd = startedAt + usualMinutes * 60000 + breakMs;
   const clock = useNow(60_000);
   // Time-of-day text waits for the phone's clock, so the page built on the server never disagrees with it.
-  const [hydrated, setHydrated] = useState(false);
+  // The lab only draws its pages in the browser, so this is true from the first frame there.
+  const [hydrated, setHydrated] = useState(() => typeof window !== "undefined");
   useEffect(() => setHydrated(true), []);
   const upcoming = hydrated ? nextPart(clock) : null;
   const [dismissed, setDismissed] = useState<string[]>([]);
@@ -142,15 +145,27 @@ export default function Today(props: {
   const weekday = new Date(clock).getDay() % 6 !== 0;
   const alerts: Alert[] = [];
   if (running && elapsed > 10 * 3600000) alerts.push({ id: "long", text: "This shift has run over 10 hours. Forgot to finish?", action: { label: "Finish", onClick: props.onFinish } });
-  else if (running && !onBreak && part && clockNow > toMinutes(part.end) + 30) alerts.push({ id: `late-${part.id}`, text: `Your ${part.label.toLowerCase()} run usually ends at ${part.end}. Still driving?`, action: { label: "Finish", onClick: props.onFinish } });
+  else if (running && !onBreak && part && !props.stillDriving && clockNow > toMinutes(part.end) + 30) alerts.push({ id: `late-${part.id}`, text: `Past ${part.end}. Still driving? It stops by itself at ${minutesToClock(toMinutes(part.end) + AUTO_FINISH_AFTER)}.`, action: { label: "Finish", onClick: props.onFinish }, alt: { label: "Still driving", onClick: props.onStillDriving } });
   if (idle && weekday && !props.dayOff && todayMinutes === 0 && clockNow >= 15 * 60 + 30) alerts.push({ id: "empty", text: "Nothing logged today. Was it your usual day?", action: { label: "Log it", onClick: props.onLogUsualDay } });
   const alert = hydrated ? alerts.find(a => !dismissed.includes(a.id)) ?? null : null;
+
+  // Auto-stop: a usual run nobody finished closes itself an hour after its usual end, logged as
+  // ending at the usual time. "Still driving" (here or on the reminder) turns this off for the run.
+  const usualEndAt = part ? Math.floor(now / 60000) * 60000 - (clockNow - toMinutes(part.end)) * 60000 : 0;
+  const autoDue = hydrated && running && !onBreak && !!part && !props.stillDriving && clockNow >= toMinutes(part.end) + AUTO_FINISH_AFTER && usualEndAt > startedAt + 10 * 60000;
+  const autoFired = useRef(0);
+  useEffect(() => {
+    if (!autoDue || autoFired.current === startedAt) return;
+    autoFired.current = startedAt;
+    props.onAutoFinish(usualEndAt);
+  }, [autoDue, startedAt, usualEndAt, props]);
   const alertCard = <AnimatePresence initial={false} mode="popLayout">
     {alert && <m.section key={alert.id} layout className={styles.alert} role="status" initial={{ opacity: 0, y: -10, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, scale: 0.96, transition: spring.exit }} transition={spring.settle}>
       <span className={styles.alertIcon}><TriangleAlert aria-hidden="true"/></span>
       <p className={styles.alertText}>{alert.text}</p>
+      {alert.alt && <button type="button" className={styles.alertAlt} onClick={() => { setDismissed(list => [...list, alert.id]); alert.alt?.onClick(); }}>{alert.alt.label}</button>}
       {alert.action && <Button variant="glass" size="small" onClick={() => { setDismissed(list => [...list, alert.id]); alert.action?.onClick(); }}>{alert.action.label}</Button>}
-      <button type="button" className={styles.alertClose} aria-label="Dismiss" onClick={() => setDismissed(list => [...list, alert.id])}><X aria-hidden="true"/></button>
+      {!alert.alt && <button type="button" className={styles.alertClose} aria-label="Dismiss" onClick={() => setDismissed(list => [...list, alert.id])}><X aria-hidden="true"/></button>}
     </m.section>}
   </AnimatePresence>;
 
@@ -179,10 +194,7 @@ export default function Today(props: {
   </>;
   const quickSlot = <>
     <div className={styles.belowSlot}>
-      <AnimatePresence mode="popLayout" initial={false}>
-        {saved && idle
-          ? <m.div key="saved" className={styles.slotItem} initial={{ opacity: 0, y: 14, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, scale: 0.96, transition: spring.exit }} transition={spring.settle}><SavedCard shown detail={saved} onUndo={props.onUndo}/></m.div>
-          : <m.div key="chips" className={`${styles.slotItem} ${styles.chips}`} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6, transition: spring.exit }} transition={spring.settle}>
+      <div className={`${styles.slotItem} ${styles.chips}`}>
             <AnimatePresence mode="popLayout" initial={false}>
               {running
                 ? <m.div key="break" {...pop}><Button variant="glass" size="small" icon={onBreak ? <Play/> : <Coffee/>} onClick={props.onBreak}>{onBreak ? "Resume" : "Break"}</Button></m.div>
@@ -194,8 +206,7 @@ export default function Today(props: {
                 ? <m.button key="ff" type="button" className={styles.roundButton} aria-label="Lab: jump 1 hour" onClick={props.onFastForward} {...pop} whileTap={{ scale: 0.92 }}><FastForward/></m.button>
                 : <m.button key="past" type="button" className={styles.roundButton} aria-label="Add a past shift" onClick={props.onAddPast} {...pop} whileTap={{ scale: 0.92 }}><Plus/></m.button>}
             </AnimatePresence>
-          </m.div>}
-      </AnimatePresence>
+      </div>
     </div>
   </>;
   const actions = <m.div variants={item} className={styles.actions}>{mainButton}{quickSlot}</m.div>;

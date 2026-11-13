@@ -1,4 +1,5 @@
-.stage { position: fixed; left: 0; right: 0; bottom: calc(24px + env(safe-area-inset-bottom)); z-index: 50; display: flex; justify-content: center; pointer-events: none; padding: 0 16px; }
+/* Sits just above the tab bar (14 px gap + 60 px bar + 12 px air), never on top of it. */
+.stage { position: fixed; left: 0; right: 0; bottom: calc(86px + env(safe-area-inset-bottom)); z-index: 50; display: flex; justify-content: center; pointer-events: none; padding: 0 16px; }
 .toast {
   pointer-events: auto; display: inline-flex; align-items: center; gap: 14px; min-height: 48px; max-width: 100%; padding: 0 8px 0 20px; overflow: hidden;
   background: var(--glass-strong); color: var(--text); -webkit-backdrop-filter: blur(24px) saturate(1.5); backdrop-filter: blur(24px) saturate(1.5);

@@ -12,7 +12,7 @@ export type ToastMessage = { id: number; text: string; action?: { label: string;
  * the same pill reshapes around the new text instead of a second one stacking up. Swipe it
  * sideways to dismiss; otherwise it leaves on its own after a few seconds.
  */
-export default function Toast({ message, onDismiss, seconds = 4 }: { message: ToastMessage | null; onDismiss: () => void; seconds?: number }) {
+export default function Toast({ message, onDismiss, seconds = 5 }: { message: ToastMessage | null; onDismiss: () => void; seconds?: number }) {
   const dismiss = useRef(onDismiss);
   useEffect(() => { dismiss.current = onDismiss; }, [onDismiss]);
   useEffect(() => {
