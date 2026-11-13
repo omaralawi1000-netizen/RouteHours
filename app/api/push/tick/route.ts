@@ -28,15 +28,26 @@ export async function GET(request: NextRequest) {
   for (const { device, etag } of stored) {
     const reminders = due(device, now);
     if (!reminders.length) continue;
-    let gone = false, changed = false;
+    // Claim first: mark the reminders as sent and save with the etag we read. If another tick (or the
+    // phone itself) wrote in between, the save fails and this tick leaves the phone alone, so two
+    // overlapping ticks can never both send the same reminder.
+    for (const reminder of reminders) device.sent[reminder.id] = now.date;
+    const claimed = await writeDevice(device, etag);
+    if (!claimed) continue;
+    let gone = false;
+    const failed: string[] = [];
     for (const reminder of reminders) {
       const result = await send(device, { title: reminder.title, body: reminder.body, tag: reminder.id, action: reminder.action });
       if (result === "gone") { gone = true; break; }
-      if (result === "ok") { device.sent[reminder.id] = now.date; sent++; changed = true; }
+      if (result === "ok") sent++;
+      else failed.push(reminder.id);
     }
-    if (gone) await removeDevice(device.endpoint);
-    // Only marks what went out; if the phone changed its reminders meanwhile, its new file wins.
-    else if (changed) await writeDevice(device, etag);
+    if (gone) { await removeDevice(device.endpoint); continue; }
+    // A delivery that failed is released again so the next tick (inside the 20 minute window) retries it.
+    if (failed.length) {
+      for (const id of failed) delete device.sent[id];
+      await writeDevice(device, claimed);
+    }
   }
   return NextResponse.json({ ok: true, sent, devices: stored.length, at: now }, { headers: { "cache-control": "no-store" } });
 }

@@ -49,13 +49,16 @@ export async function readDevices(): Promise<Stored[]> {
 
 export async function readDevice(endpoint: string) { return read(fileFor(endpoint)); }
 
-/** Saves one phone. With an etag, only if nobody changed it since it was read (returns false if they did). */
-export async function writeDevice(device: Device, etag?: string): Promise<boolean> {
+/**
+ * Saves one phone. With an etag, only if nobody changed it since it was read. Returns the new etag,
+ * or null if someone else wrote it first.
+ */
+export async function writeDevice(device: Device, etag?: string): Promise<string | null> {
   try {
-    await put(fileFor(device.endpoint), JSON.stringify(device), { access: "private", allowOverwrite: true, addRandomSuffix: false, contentType: "application/json", cacheControlMaxAge: 60, ...(etag ? { ifMatch: etag } : {}) });
-    return true;
+    const saved = await put(fileFor(device.endpoint), JSON.stringify(device), { access: "private", allowOverwrite: true, addRandomSuffix: false, contentType: "application/json", cacheControlMaxAge: 60, ...(etag ? { ifMatch: etag } : {}) });
+    return saved.etag;
   } catch (error) {
-    if (error instanceof BlobPreconditionFailedError) return false;
+    if (error instanceof BlobPreconditionFailedError) return null;
     throw error;
   }
 }
