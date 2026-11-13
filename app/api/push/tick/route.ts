@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
-import { configured, copenhagenNow, due, readDevices, removeDevice, send, writeDevice } from "../store";
+import { configured, copenhagenNow, due, readDevice, readDevices, releaseClaims, removeDevice, send, writeDevice } from "../store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -44,10 +44,8 @@ export async function GET(request: NextRequest) {
     }
     if (gone) { await removeDevice(device.endpoint); continue; }
     // A delivery that failed is released again so the next tick (inside the 20 minute window) retries it.
-    if (failed.length) {
-      for (const id of failed) delete device.sent[id];
-      await writeDevice(device, claimed);
-    }
+    // If the phone saved its file meanwhile, the release re-reads it and retries, keeping the phone's change.
+    if (failed.length) await releaseClaims(device, claimed, failed, now.date, { read: () => readDevice(device.endpoint), write: writeDevice });
   }
   return NextResponse.json({ ok: true, sent, devices: stored.length, at: now }, { headers: { "cache-control": "no-store" } });
 }

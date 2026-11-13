@@ -34,3 +34,18 @@ test("input is checked before it is stored", () => {
   assert.deepEqual(cleanDays([5, 1, 1, 9, "2"]), [1, 5]);
   assert.deepEqual(cleanDays(undefined), [1, 2, 3, 4, 5]);
 });
+
+test("a failed delivery is released even when the phone saved its file in between", async () => {
+  const { releaseClaims } = await import("./schedule.ts");
+  const base = { endpoint: "https://fcm.googleapis.com/x", keys: { p256dh: "p", auth: "a" }, reminders: [], days: [1], createdAt: "2026-11-13" };
+  type Saved = { device: Device; etag: string };
+  // The tick claimed "am-start" (and "pm-start" went out fine); the phone then changed its days, so the tick's etag is stale.
+  let stored: Saved = { device: { ...base, days: [1, 2], sent: { "am-start": "2026-11-13", "pm-start": "2026-11-13" } }, etag: "v2" };
+  const writes: string[] = [];
+  const write = async (device: Device, etag: string) => { writes.push(etag); if (etag !== stored.etag) return null; stored = { device, etag: "v3" }; return "v3"; };
+  const ok = await releaseClaims({ ...base, sent: { "am-start": "2026-11-13", "pm-start": "2026-11-13" } }, "v1", ["am-start"], "2026-11-13", { read: async () => stored, write });
+  assert.equal(ok, true);
+  assert.deepEqual(writes, ["v1", "v2"]);
+  assert.deepEqual(stored.device.sent, { "pm-start": "2026-11-13" }, "only the failed claim is cleared");
+  assert.deepEqual(stored.device.days, [1, 2], "the phone's own change is kept");
+});

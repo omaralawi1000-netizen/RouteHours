@@ -58,3 +58,23 @@ export function due(device: Device, now = copenhagenNow()): Reminder[] {
     return now.minutes >= at && now.minutes < at + 20 && device.sent[r.id] !== now.date;
   });
 }
+
+/**
+ * Gives back reminders whose delivery failed, so the next tick retries them. Another writer (the phone
+ * updating its subscription) may have saved the file since the claim, so on a conflict it re-reads the
+ * latest file and clears only this tick's own claims (still dated today), keeping everything else.
+ */
+export async function releaseClaims(
+  device: Device, etag: string, ids: string[], date: string,
+  io: { read: () => Promise<{ device: Device; etag: string } | null>; write: (device: Device, etag: string) => Promise<string | null> },
+  attempts = 3,
+): Promise<boolean> {
+  let current: { device: Device; etag: string } | null = { device, etag };
+  for (let i = 0; i < attempts && current; i++) {
+    const next = { ...current.device, sent: { ...current.device.sent } };
+    for (const id of ids) if (next.sent[id] === date) delete next.sent[id];
+    if (await io.write(next, current.etag)) return true;
+    current = await io.read();
+  }
+  return false;
+}
