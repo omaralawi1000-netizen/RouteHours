@@ -66,6 +66,19 @@ test.describe("lab: the usual split day", () => {
     await expect(page.getByRole("button", { name: "Start shift" })).toBeVisible();
   });
 
+  test("an auto-finished run only subtracts breaks taken before its usual end", async ({ page }) => {
+    await page.clock.setFixedTime(new Date("2026-11-13T05:45:00Z")); // 06:45
+    await page.goto("/lab");
+    await page.getByRole("button", { name: "Start your morning shift" }).click();
+    await page.clock.setFixedTime(new Date("2026-11-13T07:20:00Z")); // 08:20, after the usual 08:10 end
+    await page.getByRole("button", { name: "Break", exact: true }).click();
+    await page.clock.setFixedTime(new Date("2026-11-13T07:35:00Z")); // 08:35
+    await page.getByRole("button", { name: "Resume" }).click();
+    await page.clock.setFixedTime(new Date("2026-11-13T08:12:00Z")); // 09:12: stops itself, logged at 08:10
+    await expect(page.getByText("Finished on its own at 08:10")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole("button", { name: "Edit Today's shift" }).first()).toContainText("1:25");
+  });
+
   test("tapping Still driving keeps the run going past the usual end", async ({ page }) => {
     await page.clock.setFixedTime(new Date("2026-11-13T05:45:00Z"));
     await page.goto("/lab");

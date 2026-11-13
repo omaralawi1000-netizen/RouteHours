@@ -80,7 +80,7 @@ export default function Lab() {
   const [todayMinutes, setTodayMinutes] = useState(0);
   const [chipPulse, setChipPulse] = useState(0);
   const [recent, setRecent] = useState(RECENT);
-  const [saved, setSaved] = useState<{ minutes: number; startedAt: number; id: number } | null>(null);
+  const [saved, setSaved] = useState<{ minutes: number; startedAt: number; id: number; breaks?: Break[] } | null>(null);
   const timers = useRef<number[]>([]);
   const later = (ms: number, run: () => void) => { timers.current.push(window.setTimeout(run, ms)); };
   useEffect(() => () => timers.current.forEach(window.clearTimeout), []);
@@ -179,12 +179,16 @@ export default function Lab() {
   }
   function finish(at?: number, message?: string) {
     tick();
-    const end = at ?? Date.now(), breakMs = breaks.reduce((sum, b) => sum + ((b.end ?? end) - b.start), 0), id = end;
+    // A finish can be backdated (auto-finish logs the usual end), so only break time inside
+    // [start, end] counts, and breaks after the end are dropped.
+    const end = at ?? Date.now(), id = end;
+    const overlap = (b: Break) => Math.max(0, Math.min(b.end ?? end, end) - Math.max(b.start, startedAt));
+    const breakMs = breaks.reduce((sum, b) => sum + overlap(b), 0);
     const minutes = Math.max(1, Math.round((end - startedAt - breakMs) / 60000));
-    setBreaks(list => list.map(b => b.end ? b : { ...b, end }));
+    setBreaks(list => list.filter(b => b.start < end).map(b => ({ ...b, end: Math.min(b.end ?? end, end) })));
     setEndedAt(end); setPhase("landing");
     later(420, () => { setWeekMinutes(total => total + minutes); setTodayMinutes(total => total + minutes); setChipPulse(p => p + 1); });
-    const record = { minutes, startedAt, id };
+    const record = { minutes, startedAt, id, breaks };
     later(1100, () => {
       setPhase("idle"); setSaved(record);
       say(message ?? `Shift saved · ${hm(minutes)} added`, { label: "Undo", onClick: () => undoShift(record) });
@@ -210,10 +214,10 @@ export default function Lab() {
   function backdate(at: number, label: string) { setStartedAt(at); setBreaks(list => list.filter(b => b.start >= at)); say(`Start moved to ${label}`); }
   function keepDriving() { setStillDriving(true); say("Got it. It won't finish on its own this run."); }
   function autoFinish(at: number) { finish(at, `Finished on its own at ${clockTime(at)}`); }
-  function undoShift(record: { minutes: number; startedAt: number; id: number }) {
+  function undoShift(record: { minutes: number; startedAt: number; id: number; breaks?: Break[] }) {
     setWeekMinutes(total => total - record.minutes); setTodayMinutes(total => total - record.minutes);
     setRecent(list => list.filter(shift => shift.id !== record.id));
-    setStartedAt(record.startedAt); setBreaks(list => list.map((b, i) => i === list.length - 1 && b.end === record.id ? { start: b.start } : b)); setPhase("running"); setSaved(null);
+    setStartedAt(record.startedAt); setBreaks(record.breaks ?? []); setPhase("running"); setSaved(null);
     say("Shift resumed");
   }
   function undoFinish() { if (saved) undoShift(saved); }
