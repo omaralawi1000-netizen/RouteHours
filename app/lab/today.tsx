@@ -105,7 +105,7 @@ export default function Today(props: {
   const timer = onBreak && currentBreak ? hms(end - currentBreak.start) : hms(elapsed);
   const bigNumber = <m.div ref={number} key={chipPulse} className={styles.heroNumber} initial={chipPulse ? { scale: 1.06 } : false} animate={{ scale: 1 }} transition={spring.reward}>
     <RollingNumber value={idle ? hm(weekMinutes) : timer.slice(0, -3)} className={`${styles.big} ${!idle ? styles.bigTimer : ""} ${onBreak ? styles.paused : ""}`} label={idle ? `${hm(weekMinutes)} worked this week` : `Shift time ${hms(elapsed)}`}/>
-    {!idle && <RollingNumber value={timer.slice(-2)} className={`${styles.secs} ${onBreak ? styles.paused : ""}`} label=" "/>}
+    {!idle && <RollingNumber value={`:${timer.slice(-2)}`} className={`${styles.secs} ${onBreak ? styles.paused : ""}`} label=" "/>}
     <AnimatePresence initial={false}>{idle && <m.span key="of" className={`${styles.of} numeric`} initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, transition: fade }} transition={spring.smooth}>/ 37 h</m.span>}</AnimatePresence>
   </m.div>;
   const under = <AnimatePresence mode="popLayout" initial={false}>
@@ -116,7 +116,7 @@ export default function Today(props: {
     </m.p>
   </AnimatePresence>;
   const breakDueAt = onBreak ? null : end + dueIn * 60000;
-  const shiftLine = <RouteLine startedAt={startedAt} now={end} breaks={breaks} usualMinutes={usualMinutes} breakDueAt={breakDueAt !== null && breakDueAt < expectedEnd ? breakDueAt : null} paused={onBreak} startLabel={clockTime(startedAt)} endLabel={`~${clockTime(expectedEnd)}`}/>;
+  const shiftLine = <RouteLine startedAt={startedAt} now={end} breaks={breaks} usualMinutes={usualMinutes} breakDueAt={breakDueAt !== null && breakDueAt < expectedEnd ? breakDueAt : null} paused={onBreak} startLabel={clockTime(startedAt)} endLabel={`~${clockTime(expectedEnd)}`} arrived={phase === "landing"}/>;
   const due = !onBreak && dueIn <= 0;
   const liveStats = <div className={styles.liveStats}>
     <m.div layout className={`${styles.liveStat} ${due ? styles.liveHot : ""}`} transition={spring.snappy}>

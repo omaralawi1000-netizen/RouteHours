@@ -14,12 +14,14 @@ const HOUR = 3600000;
  * Breaks you took are coffee stops on the line, and the next required break sits ahead as a coffee
  * stop too, so you can see how far it is.
  */
-export default function RouteLine({ startedAt, now, breaks, usualMinutes, breakDueAt, paused, startLabel, endLabel }: {
+export default function RouteLine({ startedAt, now, breaks, usualMinutes, breakDueAt, paused, startLabel, endLabel, arrived = false }: {
   startedAt: number; now: number; breaks: Break[]; usualMinutes: number; breakDueAt: number | null; paused: boolean; startLabel: string; endLabel: string;
+  /** Finish was tapped: the bus pulls in to the last stop before the card turns back into the week. */
+  arrived?: boolean;
 }) {
   const span = Math.max(usualMinutes * 60000, now - startedAt + HOUR / 4);
   const at = (t: number) => Math.min(1, Math.max(0, (t - startedAt) / span));
-  const progress = at(now);
+  const progress = arrived ? 1 : at(now);
   const hours = Array.from({ length: Math.ceil(span / HOUR) - 1 }, (_, i) => (i + 1) * HOUR / span).filter(p => p < 0.97);
   const pct = (p: number) => `${p * 100}%`;
   return <div className={styles.wrap}>
@@ -31,7 +33,7 @@ export default function RouteLine({ startedAt, now, breaks, usualMinutes, breakD
       {breaks.map((b, i) => <div key={`g${i}`} className={styles.gap} style={{ left: pct(at(b.start)), width: pct(Math.max(0.012, at(b.end ?? now) - at(b.start))) }}/>)}
       <span className={`${styles.stop} ${styles.end} ${styles.passed}`} style={{ left: "0%" }}/>
       {hours.map(p => <span key={p} className={`${styles.stop} ${p <= progress ? styles.passed : ""}`} style={{ left: pct(p) }}/>)}
-      <span className={`${styles.stop} ${styles.end}`} style={{ left: "100%" }}/>
+      <span className={`${styles.stop} ${styles.end} ${arrived ? styles.passed : ""}`} style={{ left: "100%" }}/>
       {breaks.filter(b => b.end).map((b, i) => <span key={`b${i}`} className={`${styles.cafe} ${styles.cafeTaken}`} style={{ left: pct(at(b.start)) }} aria-hidden="true"><Coffee/></span>)}
       {breakDueAt !== null && !paused && breakDueAt > now && <span className={`${styles.cafe} ${breakDueAt <= now ? styles.cafeDue : ""}`} style={{ left: pct(at(breakDueAt)) }} aria-hidden="true"><Coffee/></span>}
       <m.div className={styles.busAt} initial={false} animate={{ left: pct(progress) }} transition={spring.smooth}>
