@@ -26,3 +26,19 @@ test("lab: the sheet closes with Escape and with Back", async ({ page }) => {
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page).toHaveURL(/\/lab$/);
 });
+
+test("lab: a break pauses the shift and the wallpaper choice is remembered", async ({ page }) => {
+  await page.goto("/lab");
+  await page.getByRole("button", { name: "Start shift" }).click();
+  await page.getByRole("button", { name: "Break", exact: true }).click();
+  await expect(page.getByText("Take your time. The clock is paused.")).toBeVisible();
+  await page.getByRole("button", { name: "Resume" }).click();
+  await expect(page.getByRole("button", { name: "Break", exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "Lab", exact: true }).click();
+  await page.getByRole("radio", { name: "Fjord Moon" }).click();
+  await expect(page.getByRole("radio", { name: "Fjord Moon" })).toHaveAttribute("aria-checked", "true");
+  await page.reload();
+  await page.getByRole("button", { name: "Lab", exact: true }).click();
+  await expect(page.getByRole("radio", { name: "Fjord Moon" })).toHaveAttribute("aria-checked", "true");
+});

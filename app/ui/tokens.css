@@ -59,11 +59,7 @@
   --glow-idle-strength: 0.18;
   --glow-run: 255 170 64;
   --glow-run-strength: 0.28;
-  /* Wallpaper: dusk */
-  --sky-top: #090B1C; --sky-mid: #1C1638; --horizon: #4A2147; --ember: #B2452F; --aura: #3B2C7A; --aura-2: #6A2C5E;
-  --hill-far: #2A1E3E; --hill-mid: #191329; --hill-near: #0E0B18; --road: #F5C58A; --stars: 0.8; --grain: 0.08;
 }
-.look[data-look="night"][data-state="running"] { --horizon: #6E2A3A; --ember: #E0742F; --aura: #4A2A6A; --aura-2: #9A3D3A; --hill-far: #3A2236; }
 .look[data-look="day"] {
   color-scheme: light;
   --bg: #E6DDEA;
@@ -87,11 +83,7 @@
   --glow-idle-strength: 0.30;
   --glow-run: 255 178 120;
   --glow-run-strength: 0.35;
-  /* Wallpaper: dawn */
-  --sky-top: #B9C7EA; --sky-mid: #E4D3EA; --horizon: #F8C9A8; --ember: #FFB38A; --aura: #C7B8F0; --aura-2: #F4B8D0;
-  --hill-far: #B4AED6; --hill-mid: #988FC4; --hill-near: #7B72AE; --road: #FFF4E2; --stars: 0; --grain: 0.06;
 }
-.look[data-look="day"][data-state="running"] { --sky-top: #E7C9D6; --horizon: #FFBE8A; --ember: #FF9E5E; --aura-2: #FFC2A0; --hill-far: #C7A9C9; }
 .look *, .look *::before, .look *::after { box-sizing: border-box; }
 .look :where(button, input, textarea, select) { font: inherit; color: inherit; }
 .look :where(button) { -webkit-user-select: none; user-select: none; touch-action: manipulation; }

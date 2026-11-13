@@ -84,3 +84,21 @@
 .wide { grid-column: 1 / -1; }
 .field input, .field textarea { width: 100%; min-height: var(--tap-min); padding: 12px 14px; border: 0; border-radius: 16px; background: var(--press); color: var(--text); font-size: 17px; box-shadow: inset 0 0 0 var(--hairline) var(--line); resize: none; }
 .field input { font-variant-numeric: tabular-nums; font-size: 22px; font-weight: 300; }
+
+/* Round 3: what sits under the big number (week bars, or the live shift line) */
+.heroVisual { position: relative; width: 100%; height: 118px; margin: 14px 0 6px; }
+.visualItem { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; }
+.paused { opacity: 0.55; }
+.breakChip { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 14px; border-radius: 999px; font-size: 13px; font-weight: 500; color: var(--text); background: var(--glass); box-shadow: inset 0 var(--hairline) 0 var(--glass-edge), 0 0 0 var(--hairline) var(--line); -webkit-backdrop-filter: blur(26px) saturate(1.35); backdrop-filter: blur(26px) saturate(1.35); }
+.breakChip svg { width: 16px; height: 16px; flex: none; }
+.breakDue { background: var(--accent); color: var(--on-accent); box-shadow: 0 0 22px rgb(var(--glow-run) / 0.6); }
+:global([data-blur="off"]) .breakChip { -webkit-backdrop-filter: none; backdrop-filter: none; background: var(--glass-strong); }
+:global([data-blur="off"]) .breakDue { background: var(--accent); }
+
+/* Wallpaper picker */
+.picker { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px 10px; }
+.pick { position: relative; display: flex; flex-direction: column; gap: 7px; padding: 0; border: 0; background: none; cursor: pointer; text-align: center; }
+.thumb { position: relative; display: block; aspect-ratio: 3 / 4; border-radius: 18px; overflow: hidden; isolation: isolate; box-shadow: inset 0 0 0 var(--hairline) var(--glass-edge), 0 10px 24px -14px rgb(0 0 0 / 0.6); }
+.ring { position: absolute; left: -4px; right: -4px; top: -4px; aspect-ratio: 3 / 4; height: auto; border-radius: 22px; box-shadow: 0 0 0 2px var(--accent), 0 0 18px rgb(var(--glow-run) / 0.55); pointer-events: none; display: flex; align-items: flex-start; justify-content: flex-end; padding: 10px; }
+.ring svg { width: 20px; height: 20px; padding: 3px; border-radius: 50%; background: var(--accent); color: var(--on-accent); stroke-width: 3; }
+.pickName { font-size: 13px; font-weight: 500; color: var(--text); line-height: 1.2; }

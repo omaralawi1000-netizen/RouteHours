@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import { AnimatePresence, LazyMotion, domMax, MotionConfig, m } from "motion/react";
-import { CalendarDays, FlaskConical, Send, Sun, Trash2 } from "lucide-react";
+import { Check, CalendarDays, FlaskConical, Send, Sun, Trash2 } from "lucide-react";
 import Button from "../ui/button";
 import Glass from "../ui/glass";
 import HoldButton from "../ui/hold-button";
@@ -15,14 +15,16 @@ import TabBar from "../ui/tab-bar";
 import Toast, { type ToastMessage } from "../ui/toast";
 import Toggle from "../ui/toggle";
 import Wallpaper from "../ui/wallpaper";
+import { SCENES, type SceneId } from "../ui/wallpaper-scenes";
+import { type Break } from "../ui/shift-line";
+import { type DayBar } from "../ui/week-bars";
 import WeekStrip, { type WeekData } from "../ui/week-strip";
 import { setHaptics, tick } from "../ui/haptics";
 import { spring, springSpec, type SpringName } from "../ui/motion";
-import Today, { clockTime, hm, type Phase, type RecentShift } from "./today";
+import Today, { clockTime, hm, USUAL, type Phase, type RecentShift } from "./today";
 import { item, screen } from "./stagger";
 import styles from "./lab.module.css";
 
-type Look = "night" | "day";
 type TabId = "today" | "week" | "lab";
 
 const day = (short: string, minutes: number) => ({ short, minutes });
@@ -37,8 +39,16 @@ const RECENT: RecentShift[] = [
   { id: 1, day: "Last week", start: "Fri 06:00", end: "13:20", minutes: 440 },
 ];
 
+type DayMark = "worked" | "syg" | "fri";
+const SCENE_KEY = "routehours:lab-wallpaper";
+
 export default function Lab() {
-  const [look, setLook] = useState<Look>("night");
+  const [sceneId, setSceneId] = useState<SceneId>("dusk");
+  const scene = SCENES.find(s => s.id === sceneId) ?? SCENES[0];
+  const look = scene.tone;
+  useEffect(() => {
+    try { const stored = localStorage.getItem(SCENE_KEY); if (stored && SCENES.some(s => s.id === stored)) setSceneId(stored as SceneId); } catch { /* private mode: keep the default */ }
+  }, []);
   const [tab, setTab] = useState<TabId>("today");
   const [blur, setBlur] = useState(true);
   const [reduce, setReduce] = useState(false);
@@ -67,27 +77,42 @@ export default function Lab() {
   }, []);
   useEffect(() => { setHaptics(haptics); }, [haptics]);
   useEffect(() => {
-    const color = look === "night" ? "#0B0D1C" : "#B9C7EA";
+    const color = scene.colors["--sky-top"];
     document.querySelectorAll<HTMLMetaElement>("meta[name=theme-color]").forEach(meta => { meta.removeAttribute("media"); meta.content = color; });
     document.documentElement.style.background = color;
-  }, [look]);
+  }, [scene]);
 
-  function changeLook(next: Look) {
+  // The sky colours blend on their own. Only a switch between a dark and a light scene changes the text colours, so that one crossfades the page.
+  function changeScene(next: SceneId) {
+    tick();
+    try { localStorage.setItem(SCENE_KEY, next); } catch { /* not saved, still applied */ }
+    const nextTone = SCENES.find(s => s.id === next)?.tone;
     const doc = document as Document & { startViewTransition?: (update: () => void) => unknown };
-    if (doc.startViewTransition && !reduce && !matchMedia("(prefers-reduced-motion: reduce)").matches) doc.startViewTransition(() => flushSync(() => setLook(next)));
-    else setLook(next);
+    if (nextTone !== look && doc.startViewTransition && !reduce && !matchMedia("(prefers-reduced-motion: reduce)").matches) doc.startViewTransition(() => flushSync(() => setSceneId(next)));
+    else setSceneId(next);
   }
   function changeTab(next: TabId) { setTab(next); window.scrollTo({ top: 0, behavior: reduce ? "auto" : "smooth" }); }
 
-  function start() { tick(); setSaved(null); setStartedAt(Date.now()); setPhase("running"); }
+  const [breaks, setBreaks] = useState<Break[]>([]);
+  const [note, setNote] = useState<string | undefined>();
+  function start(withNote?: string) { tick(); setSaved(null); setBreaks([]); setNote(withNote); setStartedAt(Date.now()); setPhase("running"); }
+  function startUsual() { start(USUAL.label); say(`${USUAL.label} started. Usually ${hm(USUAL.minutes)}.`); }
+  function toggleBreak() {
+    tick();
+    const open = breaks.some(b => !b.end);
+    setBreaks(list => open ? list.map(b => b.end ? b : { ...b, end: Date.now() }) : [...list, { start: Date.now() }]);
+    if (open) say("Back on the road");
+  }
   function finish() {
     tick();
-    const end = Date.now(), minutes = Math.max(1, Math.round((end - startedAt) / 60000)), id = end;
+    const end = Date.now(), breakMs = breaks.reduce((sum, b) => sum + ((b.end ?? end) - b.start), 0), id = end;
+    const minutes = Math.max(1, Math.round((end - startedAt - breakMs) / 60000));
+    setBreaks(list => list.map(b => b.end ? b : { ...b, end }));
     setEndedAt(end); setPhase("landing");
     later(420, () => { setWeekMinutes(total => total + minutes); setTodayMinutes(total => total + minutes); setChipPulse(p => p + 1); });
     later(1100, () => {
       setPhase("idle"); setSaved({ minutes, startedAt, id });
-      setRecent(list => [{ id, day: "Today", start: clockTime(startedAt), end: clockTime(end), minutes }, ...list]);
+      setRecent(list => [{ id, day: "Today", start: clockTime(startedAt), end: clockTime(end), minutes, note }, ...list]);
     });
     later(8000, () => setSaved(current => current?.id === id ? null : current));
   }
@@ -95,14 +120,20 @@ export default function Lab() {
     if (!saved) return;
     setWeekMinutes(total => total - saved.minutes); setTodayMinutes(total => total - saved.minutes);
     setRecent(list => list.filter(shift => shift.id !== saved.id));
-    setStartedAt(saved.startedAt); setPhase("running"); setSaved(null);
+    setStartedAt(saved.startedAt); setBreaks(list => list.map((b, i) => i === list.length - 1 && b.end === saved.id ? { start: b.start } : b)); setPhase("running"); setSaved(null);
     say("Shift resumed");
   }
 
   const [status, setStatus] = useState<WeekStatus>("reviewed");
   const [statusPulse, setStatusPulse] = useState(0);
   const [weekIndex, setWeekIndex] = useState(WEEKS.length - 1);
+  const [mark, setMark] = useState<DayMark>("worked");
+  function changeMark(next: DayMark) {
+    tick(); setMark(next);
+    say(next === "syg" ? "Today marked sick" : next === "fri" ? "Today marked as day off" : "Mark removed");
+  }
   const weeks = WEEKS.map((week, index) => index === WEEKS.length - 1 ? { ...week, days: week.days.map((d, i) => ({ ...d, minutes: i === todayIndex ? d.minutes + todayMinutes : d.minutes, today: i === todayIndex })) } : week);
+  const weekDays: DayBar[] = weeks[WEEKS.length - 1].days.map((d, i) => ({ short: d.short, minutes: d.minutes, today: i === todayIndex, mark: i === todayIndex && mark !== "worked" ? (mark === "syg" ? "Syg" : "Fri") : undefined }));
   const [editing, setEditing] = useState<RecentShift | null>(null);
   const lastEditing = useRef<RecentShift | null>(null);
   if (editing) lastEditing.current = editing;
@@ -129,19 +160,26 @@ export default function Lab() {
   return <LazyMotion features={domMax}>
     <MotionConfig reducedMotion={reduce ? "always" : "user"}>
       <div className={`look ${styles.lab}`} data-look={look} data-state={running ? "running" : "idle"} data-blur={blur ? "on" : "off"} data-motion={reduce ? "reduced" : "full"} style={{ ["--number-weight" as string]: weight }}>
-        <Wallpaper state={running ? "running" : "idle"}/>
+        <Wallpaper scene={sceneId} state={running && !breaks.some(b => !b.end) ? "running" : "idle"}/>
         <AnimatePresence mode="wait" initial={true}>
           <m.main key={tab} className={styles.page} variants={screen} initial="hidden" animate="show" exit="leave">
             {tab === "today" && <Today phase={phase} startedAt={startedAt} endedAt={endedAt} weekMinutes={weekMinutes} todayMinutes={todayMinutes} chipPulse={chipPulse} dateLabel={dateLabel}
               saved={saved ? `${hm(saved.minutes)} added to this week` : null} recent={recent} mic={mic} level={level} micSeconds={micSeconds}
-              onUndo={undoFinish} onStart={start} onFinish={finish} onFastForward={() => setStartedAt(value => value - 3_600_000)} onMic={toggleMic}
-              onNote={() => say("Notes open here in the real app")} onAddPast={() => setEditing({ id: -1, day: "New", start: "06:00", end: "14:00", minutes: 480 })} onOpenShift={setEditing} onSettings={() => changeTab("lab")}/>}
+              breaks={breaks} weekDays={weekDays} onBreak={toggleBreak} onStartUsual={startUsual}
+              onUndo={undoFinish} onStart={() => start()} onFinish={finish} onFastForward={() => { setStartedAt(value => value - 3_600_000); setBreaks(list => list.map(b => ({ start: b.start - 3_600_000, end: b.end && b.end - 3_600_000 }))); }} onMic={toggleMic}
+              onAddPast={() => setEditing({ id: -1, day: "New", start: "06:00", end: "14:00", minutes: 480 })} onOpenShift={setEditing} onSettings={() => changeTab("lab")}/>}
 
             {tab === "week" && <>
               <m.header variants={item} className={styles.top}>
                 <div><p className={styles.eyebrow}>Week 46 · 9 – 15 Nov</p><h1 className={`${styles.title} serif`}>Your week</h1></div>
               </m.header>
               <m.section variants={item}><Glass blur className={styles.card}><WeekStrip weeks={weeks} index={weekIndex} onIndex={setWeekIndex}/></Glass></m.section>
+              <m.section variants={item}>
+                <Glass blur className={styles.card}>
+                  <div className={styles.cardHead}><h2 className={`${styles.cardTitle} serif`}>Today was</h2><span className={styles.cardMeta}>Goes on the timesheet</span></div>
+                  <SegmentedControl label="Mark today" value={mark} onChange={changeMark} options={[{ value: "worked", label: "Worked" }, { value: "syg", label: "Sick" }, { value: "fri", label: "Day off" }]}/>
+                </Glass>
+              </m.section>
               <m.section variants={item}>
                 <Glass blur className={styles.card}>
                   <div className={styles.cardHead}><h2 className={`${styles.cardTitle} serif`}>Timesheet</h2><StatusPill status={status} pulse={statusPulse}/></div>
@@ -165,7 +203,21 @@ export default function Lab() {
               </m.header>
               <m.section variants={item}>
                 <Glass blur className={styles.card}>
-                  <Row label="Look" hint="Dusk at night, dawn by day"><SegmentedControl label="Look" value={look} onChange={changeLook} options={[{ value: "night", label: "Night" }, { value: "day", label: "Day" }]}/></Row>
+                  <div className={styles.cardHead}><h2 className={`${styles.cardTitle} serif`}>Wallpaper</h2><span className={styles.cardMeta}>Start a shift to see it warm up</span></div>
+                  <div className={styles.picker} role="radiogroup" aria-label="Wallpaper">
+                    {SCENES.map(option => {
+                      const selected = option.id === sceneId;
+                      return <m.button key={option.id} type="button" role="radio" aria-checked={selected} className={styles.pick} onClick={() => changeScene(option.id)} whileTap={{ scale: 0.95 }} transition={spring.tap}>
+                        <span className={styles.thumb}><Wallpaper thumb scene={option.id} state="idle"/></span>
+                        {selected && <m.span layoutId="wallpaper-ring" className={styles.ring} transition={spring.snappy}><Check aria-hidden="true"/></m.span>}
+                        <span className={styles.pickName}>{option.name}</span>
+                      </m.button>;
+                    })}
+                  </div>
+                </Glass>
+              </m.section>
+              <m.section variants={item}>
+                <Glass blur className={styles.card}>
                   <Row label="Number weight" hint="Check 200 outside in daylight"><SegmentedControl label="Number weight" value={weight} onChange={setWeight} options={[{ value: "200", label: "200" }, { value: "300", label: "300" }]}/></Row>
                   <Row label="Live blur" hint="Off saves battery"><Toggle label="Live blur" checked={blur} onChange={setBlur}/></Row>
                   <Row label="Reduce motion" hint="How it feels turned down"><Toggle label="Reduce motion" checked={reduce} onChange={setReduce}/></Row>
@@ -191,7 +243,7 @@ export default function Lab() {
               </m.section>
               <m.footer variants={item} className={styles.footer}>
                 <p className="serif">How does it feel now?</p>
-                <p>Rate it 1 to 10 again, and tell me Night or Day.</p>
+                <p>Rate it 1 to 10 again, and tell me which wallpaper you kept.</p>
               </m.footer>
             </>}
           </m.main>
