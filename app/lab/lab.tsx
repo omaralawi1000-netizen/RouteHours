@@ -21,7 +21,7 @@ import { type DayBar } from "../ui/week-bars";
 import WeekStrip, { type WeekData } from "../ui/week-strip";
 import { setHaptics, tick } from "../ui/haptics";
 import { spring, springSpec, type SpringName } from "../ui/motion";
-import Today, { clockTime, hm, USUAL, type Phase, type RecentShift } from "./today";
+import Today, { clockTime, hm, USUAL, type Layout, type Phase, type RecentShift } from "./today";
 import { item, screen } from "./stagger";
 import styles from "./lab.module.css";
 
@@ -41,13 +41,24 @@ const RECENT: RecentShift[] = [
 
 type DayMark = "worked" | "syg" | "fri";
 const SCENE_KEY = "routehours:lab-wallpaper";
+const LAYOUT_KEY = "routehours:lab-layout";
+const LAYOUTS: { value: Layout; label: string }[] = [{ value: "card", label: "Card" }, { value: "bento", label: "Tiles" }, { value: "horizon", label: "Horizon" }];
+/** Auto wallpaper: dawn sea in the morning, desert by day, dusk hills in the evening, the fjord at night. */
+function sceneForHour(hour: number): SceneId { return hour >= 5 && hour < 10 ? "ocean" : hour >= 10 && hour < 16 ? "desert" : hour >= 16 && hour < 21 ? "dusk" : "fjord"; }
 
 export default function Lab() {
-  const [sceneId, setSceneId] = useState<SceneId>("dusk");
+  const [choice, setChoice] = useState<SceneId | "auto">("auto");
+  const [hourNow, setHourNow] = useState(-1);
+  useEffect(() => { const update = () => setHourNow(new Date().getHours()); update(); const timer = window.setInterval(update, 60_000); return () => window.clearInterval(timer); }, []);
+  const sceneId: SceneId = choice === "auto" ? (hourNow < 0 ? "dusk" : sceneForHour(hourNow)) : choice;
   const scene = SCENES.find(s => s.id === sceneId) ?? SCENES[0];
+  const [layout, setLayout] = useState<Layout>("card");
   const look = scene.tone;
   useEffect(() => {
-    try { const stored = localStorage.getItem(SCENE_KEY); if (stored && SCENES.some(s => s.id === stored)) setSceneId(stored as SceneId); } catch { /* private mode: keep the default */ }
+    try {
+      const stored = localStorage.getItem(SCENE_KEY); if (stored && (stored === "auto" || SCENES.some(s => s.id === stored))) setChoice(stored as SceneId | "auto");
+      const storedLayout = localStorage.getItem(LAYOUT_KEY); if (storedLayout && LAYOUTS.some(l => l.value === storedLayout)) setLayout(storedLayout as Layout);
+    } catch { /* private mode: keep the defaults */ }
   }, []);
   const [tab, setTab] = useState<TabId>("today");
   const [blur, setBlur] = useState(true);
@@ -83,13 +94,17 @@ export default function Lab() {
   }, [scene]);
 
   // The sky colours blend on their own. Only a switch between a dark and a light scene changes the text colours, so that one crossfades the page.
-  function changeScene(next: SceneId) {
+  function changeLayout(next: Layout) {
+    tick(); setLayout(next);
+    try { localStorage.setItem(LAYOUT_KEY, next); } catch { /* not saved, still applied */ }
+  }
+  function changeScene(next: SceneId | "auto") {
     tick();
     try { localStorage.setItem(SCENE_KEY, next); } catch { /* not saved, still applied */ }
-    const nextTone = SCENES.find(s => s.id === next)?.tone;
+    const nextTone = SCENES.find(s => s.id === (next === "auto" ? sceneForHour(new Date().getHours()) : next))?.tone;
     const doc = document as Document & { startViewTransition?: (update: () => void) => unknown };
-    if (nextTone !== look && doc.startViewTransition && !reduce && !matchMedia("(prefers-reduced-motion: reduce)").matches) doc.startViewTransition(() => flushSync(() => setSceneId(next)));
-    else setSceneId(next);
+    if (nextTone !== look && doc.startViewTransition && !reduce && !matchMedia("(prefers-reduced-motion: reduce)").matches) doc.startViewTransition(() => flushSync(() => setChoice(next)));
+    else setChoice(next);
   }
   function changeTab(next: TabId) { setTab(next); window.scrollTo({ top: 0, behavior: reduce ? "auto" : "smooth" }); }
 
@@ -165,7 +180,7 @@ export default function Lab() {
           <m.main key={tab} className={styles.page} variants={screen} initial="hidden" animate="show" exit="leave">
             {tab === "today" && <Today phase={phase} startedAt={startedAt} endedAt={endedAt} weekMinutes={weekMinutes} todayMinutes={todayMinutes} chipPulse={chipPulse} dateLabel={dateLabel}
               saved={saved ? `${hm(saved.minutes)} added to this week` : null} recent={recent} mic={mic} level={level} micSeconds={micSeconds}
-              note={note} breaks={breaks} weekDays={weekDays} onBreak={toggleBreak} onStartUsual={startUsual}
+              layout={layout} note={note} breaks={breaks} weekDays={weekDays} onBreak={toggleBreak} onStartUsual={startUsual}
               onUndo={undoFinish} onStart={() => start()} onFinish={finish} onFastForward={() => { setStartedAt(value => value - 3_600_000); setBreaks(list => list.map(b => ({ start: b.start - 3_600_000, end: b.end && b.end - 3_600_000 }))); }} onMic={toggleMic}
               onAddPast={() => setEditing({ id: -1, day: "New", start: "06:00", end: "14:00", minutes: 480 })} onOpenShift={setEditing} onSettings={() => changeTab("lab")}/>}
 
@@ -203,10 +218,19 @@ export default function Lab() {
               </m.header>
               <m.section variants={item}>
                 <Glass blur className={styles.card}>
-                  <div className={styles.cardHead}><h2 className={`${styles.cardTitle} serif`}>Wallpaper</h2><span className={styles.cardMeta}>Start a shift to see it warm up</span></div>
+                  <div className={styles.cardHead}><h2 className={`${styles.cardTitle} serif`}>Today layout</h2><span className={styles.cardMeta}>Three ideas</span></div>
+                  <SegmentedControl label="Today layout" value={layout} onChange={changeLayout} options={LAYOUTS}/>
+                  <p className={styles.hint}>{layout === "card" ? "One glass card, like a phone widget." : layout === "bento" ? "Small tiles: week, today, break, finish time." : "The sky stays open; everything sits on one sheet."}</p>
+                  <Button variant="glass" size="small" onClick={() => changeTab("today")}>See it on Today</Button>
+                </Glass>
+              </m.section>
+              <m.section variants={item}>
+                <Glass blur className={styles.card}>
+                  <div className={styles.cardHead}><h2 className={`${styles.cardTitle} serif`}>Wallpaper</h2><span className={styles.cardMeta}>Warms up on shift</span></div>
+                  <Row label="Follow the time of day" hint={choice === "auto" ? `Now: ${scene.name}` : "Dawn, day, dusk and night"}><Toggle label="Follow the time of day" checked={choice === "auto"} onChange={on => changeScene(on ? "auto" : sceneId)}/></Row>
                   <div className={styles.picker} role="radiogroup" aria-label="Wallpaper">
                     {SCENES.map(option => {
-                      const selected = option.id === sceneId;
+                      const selected = choice === option.id;
                       return <m.button key={option.id} type="button" role="radio" aria-checked={selected} className={styles.pick} onClick={() => changeScene(option.id)} whileTap={{ scale: 0.95 }} transition={spring.tap}>
                         <span className={styles.thumb}><Wallpaper thumb scene={option.id} state="idle"/></span>
                         {selected && <m.span layoutId="wallpaper-ring" className={styles.ring} transition={spring.snappy}><Check aria-hidden="true"/></m.span>}
