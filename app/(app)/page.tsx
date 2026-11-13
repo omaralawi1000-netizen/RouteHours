@@ -27,7 +27,7 @@ import ShareSheet from "../sheets/share-sheet";
 import RestoreSheet from "../sheets/restore-sheet";
 import InstallSheet from "../sheets/install-sheet";
 import StorageError from "../sheets/storage-error";
-import { addDays, mondayOf, periodMinutes, zonedInstant } from "@/lib/ledger";
+import { addDays, dateInZone, mondayOf, periodMinutes, zonedInstant } from "@/lib/ledger";
 import { normalizeGoogleClientId } from "@/lib/google-auth";
 import { isTimeRequest } from "@/lib/voice-plan";
 import { interpretVoice } from "@/lib/voice";
@@ -90,7 +90,8 @@ function Home() {
   } });
   const dictation = useDictation({ groqKey: groqApiKey, language: dictationLanguage, onTranscript: acceptVoiceTranscript, onNotice: setNotice, onStart: () => setVoiceAction(null) });
 
-  useEffect(() => { if (loaded) setSelectedWeek(mondayOf(today)); }, [loaded]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Use the saved work time zone directly: `today` can still hold the default zone's date on this render.
+  useEffect(() => { if (loaded) setSelectedWeek(mondayOf(dateInZone(Date.now(), workZone))); }, [loaded]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (!notice) return; const timer = window.setTimeout(() => setNotice(""), 6000); return () => window.clearTimeout(timer); }, [notice]);
   useModalFocus({ editingId: editing?.shift.id, settingsOpen, shareOpen: sheet.shareOpen, weeklyExportOpen, installOpen: install.instructionsOpen, voicePlanOpen: voicePlanText !== null, restoreOpen: backups.restorePreview !== null, storageError, creatingSheet: sheet.creating, onEscape: () => {
     if (backups.restorePreview) backups.setRestorePreview(null); else if (voicePlanText !== null) setVoicePlanText(null); else if (install.instructionsOpen) install.setInstructionsOpen(false); else if (settingsOpen) setSettingsOpen(false); else if (sheet.shareOpen) sheet.setShareOpen(false); else setEditing(null);

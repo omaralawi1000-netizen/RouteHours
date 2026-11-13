@@ -64,7 +64,7 @@ export function useBackups({ clientId, online, today, onNotice, onRestored }: Op
     try {
       const receipts = decodeSubmissions(backup.submissions);
       const combined = merge ? [...current.shifts, ...backup.shifts.filter(s => !current.shifts.some(v => v.id === s.id || v.start === s.start && v.end === s.end))] : backup.shifts;
-      const restored = { ...current, shifts: combined, active: merge ? current.active : backup.active || null, noteDraft: merge ? current.noteDraft : backup.noteDraft || "", payroll: merge ? current.payroll : backup.payroll || current.payroll, dayDetails: merge ? { ...backup.dayDetails, ...current.dayDetails } : backup.dayDetails || {}, workZone: merge ? current.workZone : backup.workZone || current.workZone, templates: merge ? current.templates : validateTemplates(backup.templates ?? current.templates) };
+      const restored = { shifts: combined, active: merge ? current.active : backup.active || null, noteDraft: merge ? current.noteDraft : backup.noteDraft || "", payroll: merge ? current.payroll : backup.payroll || current.payroll, dayDetails: merge ? { ...backup.dayDetails, ...current.dayDetails } : backup.dayDetails || {}, workZone: merge ? current.workZone : backup.workZone || current.workZone, templates: merge ? current.templates : validateTemplates(backup.templates ?? current.templates) };
       await saveNow(restored, receipts);
       onRestored?.(); setRestorePreview(null);
       onNotice(merge ? "Backup merged. Existing shifts, templates and timer were kept." : "Backup restored. Email history was preserved and merged.");

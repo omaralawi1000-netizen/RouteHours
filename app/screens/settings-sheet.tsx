@@ -41,11 +41,11 @@ export default function SettingsSheet({ section, onSection, onClose, online, eff
   async function saveSettings() {
     const normalizedId = normalizeGoogleClientId(googleClientId);
     if (normalizedId && !validGoogleClientId(normalizedId)) { setSaved(false); setSaveError("Paste a Web application client ID ending in .apps.googleusercontent.com, or its downloaded JSON."); return; }
-    try { await saveNow({ ...data, googleClientId: normalizedId }); setSaved(true); setSaveError(""); }
+    try { await saveNow({ googleClientId: normalizedId }); setSaved(true); setSaveError(""); }
     catch (e) { setSaved(false); setSaveError((e as Error).message); }
   }
   async function saveTemplates(value: ShiftTemplate[]) {
-    await saveNow({ ...data, templates: validateTemplates(value) });
+    await saveNow({ templates: validateTemplates(value) });
   }
   async function connectGoogle(changeAccount = false) {
     if (!online) { setGoogleError("Go online to connect Google. Your settings stay saved here."); return; }

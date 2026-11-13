@@ -19,8 +19,11 @@ type AppData = {
   isBlocked: () => boolean;
   /** Change saved data. Saving happens automatically right after. */
   update: (change: DataChange) => void;
-  /** Save a full snapshot now (with optional email receipts) and wait for it. Updates the data on success. */
-  saveNow: (next: StoredData, receipts?: Submission[]) => Promise<void>;
+  /**
+   * Apply `change` to the latest data, save it now (with optional email receipts) and wait for it.
+   * On success only `change` is applied, so edits made while saving are kept.
+   */
+  saveNow: (change: Partial<StoredData>, receipts?: Submission[]) => Promise<void>;
 };
 
 const AppDataContext = createContext<AppData | null>(null);
@@ -36,6 +39,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("Loading your records…");
   const [storageError, setStorageError] = useState("");
   const lastEnqueued = useRef("");
+  const latest = useRef(data);
+  useEffect(() => { latest.current = data; }, [data]);
   const revision = useRef(0), saveQueue = useRef<Promise<void>>(Promise.resolve()), storageBlocked = useRef(false), saveSequence = useRef(0);
 
   useEffect(() => {
@@ -86,7 +91,10 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       return Object.keys(patch).length ? { ...current, ...patch } : current;
     });
   }, []);
-  const saveNow = useCallback(async (next: StoredData, receipts: Submission[] = []) => { await persist(next, receipts); setData(next); }, [persist]);
+  const saveNow = useCallback(async (change: Partial<StoredData>, receipts: Submission[] = []) => {
+    await persist({ ...latest.current, ...change }, receipts);
+    setData(current => ({ ...current, ...change }));
+  }, [persist]);
   const isBlocked = useCallback(() => storageBlocked.current, []);
 
   const value = useMemo<AppData>(() => ({ data, loaded, bootError, setBootError, saveStatus, storageError, isBlocked, update, saveNow }), [data, loaded, bootError, saveStatus, storageError, isBlocked, update, saveNow]);

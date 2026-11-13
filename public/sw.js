@@ -27,7 +27,8 @@ self.addEventListener("fetch", event => {
   if (request.method !== "GET" || url.origin !== self.location.origin || url.pathname.startsWith("/api/")) return;
   if (request.mode === "navigate") {
     event.respondWith(fetch(request).then(response => {
-      if (response.ok) {
+      // Only the app itself is the offline shell. Other pages (like /lab) must never replace it.
+      if (response.ok && url.pathname === "/") {
         const copy = response.clone();
         event.waitUntil(caches.open(CACHE).then(cache => cache.put("/", copy)));
       }
