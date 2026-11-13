@@ -83,7 +83,7 @@
 .field input { font-variant-numeric: tabular-nums; font-size: 22px; font-weight: 300; }
 
 /* Round 3: what sits under the big number (week bars, or the live shift line) */
-.heroVisual { position: relative; width: 100%; height: 104px; margin-top: 16px; }
+.heroVisual { position: relative; width: 100%; height: 112px; margin-top: 16px; }
 .visualItem { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: stretch; justify-content: flex-end; gap: 14px; }
 .visualItem > :global(*) { width: 100%; }
 .visualItem > .breakChip { width: auto; align-self: flex-start; }
@@ -129,3 +129,12 @@
 .grabber { align-self: center; width: 40px; height: 5px; border-radius: 99px; background: var(--text); opacity: 0.25; margin-bottom: 8px; }
 .sheetHero { display: flex; flex-direction: column; padding-bottom: 8px; }
 .sheetRecent { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; padding-top: 18px; box-shadow: 0 -1px 0 var(--line); }
+
+/* Horizon on shift: two glanceable numbers under the line */
+.liveStats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.liveStat { display: flex; flex-direction: column; gap: 2px; padding: 10px 14px; border-radius: 18px; background: var(--press); box-shadow: inset 0 0 0 var(--hairline) var(--line); transition: background 0.5s ease, color 0.5s ease; }
+.liveHot { background: var(--accent); color: var(--on-accent); box-shadow: 0 12px 30px -14px rgb(var(--glow-run) / 0.8); }
+.liveLabel { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-2); }
+.liveHot .liveLabel { color: inherit; opacity: 0.75; }
+.liveLabel svg { width: 13px; height: 13px; }
+.liveValue { font-size: 26px; font-weight: 300; letter-spacing: -0.02em; line-height: 1.15; }

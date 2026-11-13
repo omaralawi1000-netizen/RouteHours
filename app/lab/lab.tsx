@@ -42,7 +42,7 @@ const RECENT: RecentShift[] = [
 type DayMark = "worked" | "syg" | "fri";
 const SCENE_KEY = "routehours:lab-wallpaper";
 const LAYOUT_KEY = "routehours:lab-layout";
-const LAYOUTS: { value: Layout; label: string }[] = [{ value: "card", label: "Card" }, { value: "bento", label: "Tiles" }, { value: "horizon", label: "Horizon" }];
+const LAYOUTS: { value: Layout; label: string }[] = [{ value: "horizon", label: "Horizon" }, { value: "card", label: "Card" }, { value: "bento", label: "Tiles" }];
 /** Auto wallpaper: dawn sea in the morning, desert by day, dusk hills in the evening, the fjord at night. */
 function sceneForHour(hour: number): SceneId { return hour >= 5 && hour < 10 ? "ocean" : hour >= 10 && hour < 16 ? "desert" : hour >= 16 && hour < 21 ? "dusk" : "fjord"; }
 
@@ -52,7 +52,7 @@ export default function Lab() {
   useEffect(() => { const update = () => setHourNow(new Date().getHours()); update(); const timer = window.setInterval(update, 60_000); return () => window.clearInterval(timer); }, []);
   const sceneId: SceneId = choice === "auto" ? (hourNow < 0 ? "dusk" : sceneForHour(hourNow)) : choice;
   const scene = SCENES.find(s => s.id === sceneId) ?? SCENES[0];
-  const [layout, setLayout] = useState<Layout>("card");
+  const [layout, setLayout] = useState<Layout>("horizon");
   const look = scene.tone;
   useEffect(() => {
     try {

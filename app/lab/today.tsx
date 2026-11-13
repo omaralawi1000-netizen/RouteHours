@@ -80,11 +80,22 @@ export default function Today(props: {
   const breakText = onBreak ? "Break counts toward your 45 min" : dueIn <= 0 ? "45 min break due now" : `45 min break due in ${hm(dueIn)}`;
   const shiftLine = <ShiftLine startedAt={startedAt} now={end} breaks={breaks} usualMinutes={USUAL.minutes} startLabel={clockTime(startedAt)} endLabel={`~${clockTime(expectedEnd)}`}/>;
   const breakChip = <m.div layout className={`${styles.breakChip} ${dueIn <= 0 && !onBreak ? styles.breakDue : ""}`} transition={spring.snappy}><Coffee aria-hidden="true"/><span className="numeric">{breakText}</span></m.div>;
+  const due = !onBreak && dueIn <= 0;
+  const liveStats = <div className={styles.liveStats}>
+    <m.div layout className={`${styles.liveStat} ${due ? styles.liveHot : ""}`} transition={spring.snappy}>
+      <span className={styles.liveLabel}><Coffee aria-hidden="true"/>{onBreak ? "On break" : due ? "Break due" : "Break in"}</span>
+      {due ? <span className={styles.liveValue}>Now</span> : <RollingNumber className={styles.liveValue} value={onBreak && currentBreak ? hm((end - currentBreak.start) / 60000) : hm(Math.max(0, dueIn))}/>}
+    </m.div>
+    <div className={styles.liveStat}>
+      <span className={styles.liveLabel}><Flag aria-hidden="true"/>Done around</span>
+      <RollingNumber className={styles.liveValue} value={clockTime(expectedEnd)}/>
+    </div>
+  </div>;
   const visual = <div className={styles.heroVisual}>
     <AnimatePresence mode="popLayout" initial={false}>
       {idle
         ? <m.div key="bars" className={styles.visualItem} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8, transition: spring.exit }} transition={spring.settle}><WeekBars days={props.weekDays}/></m.div>
-        : <m.div key="line" className={styles.visualItem} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8, transition: spring.exit }} transition={spring.settle}>{shiftLine}{breakChip}</m.div>}
+        : <m.div key="line" className={styles.visualItem} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8, transition: spring.exit }} transition={spring.settle}>{shiftLine}{layout === "horizon" ? liveStats : breakChip}</m.div>}
     </AnimatePresence>
   </div>;
   const heroInner = <>
