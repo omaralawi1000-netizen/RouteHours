@@ -31,7 +31,7 @@ test("lab: a break pauses the shift and the wallpaper choice is remembered", asy
   await page.goto("/lab");
   await page.getByRole("button", { name: "Start shift" }).click();
   await page.getByRole("button", { name: "Break", exact: true }).click();
-  await expect(page.getByText("Take your time. The clock is paused.")).toBeVisible();
+  await expect(page.getByText(/Shift paused at .*Take your time/)).toBeVisible();
   await page.getByRole("button", { name: "Resume" }).click();
   await expect(page.getByRole("button", { name: "Break", exact: true })).toBeVisible();
 

@@ -10,20 +10,18 @@
 .roundButton svg { width: 20px; height: 20px; }
 :global([data-blur="off"]) .roundButton { -webkit-backdrop-filter: none; backdrop-filter: none; background: var(--glass-strong); }
 
-/* Hero */
-.hero { display: flex; flex-direction: column; align-items: center; padding-top: 4px; }
-.big { font-size: 76px; font-weight: var(--number-weight, 200); letter-spacing: -0.04em; margin: 6px 0 2px; text-shadow: 0 4px 40px rgb(0 0 0 / 0.18); }
-.bigTimer { font-size: 60px; }
-.under { font-size: 14px; color: var(--text-2); height: 20px; }
-.insight { min-height: 30px; margin-top: -10px; font-size: 22px; line-height: 1.25; text-align: center; padding: 0 12px; color: var(--text); }
-
-/* Stats glass */
-.stats { display: grid; grid-template-columns: repeat(3, 1fr); padding: 14px 6px; border-radius: 24px; }
-.stats > * + * { box-shadow: -1px 0 0 var(--line); }
-.statWrap { display: flex; justify-content: center; }
-.stat { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+/* Hero card: the week (or the running shift) as one piece of glass, left-aligned like a widget */
+.heroCard { padding: 18px 20px 20px; border-radius: 30px; display: flex; flex-direction: column; transition: box-shadow 0.8s ease; }
+.heroLive { box-shadow: inset 0 var(--hairline) 0 var(--glass-edge), 0 0 0 var(--hairline) rgb(var(--glow-run) / 0.35), 0 24px 60px -28px rgb(var(--glow-run) / 0.55); }
+.heroHead { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 18px; }
+.heroMeta { font-size: 13px; color: var(--text-2); }
+.heroNumber { display: flex; align-items: baseline; gap: 10px; transform-origin: left center; }
+.big { font-size: 76px; line-height: 1; font-weight: var(--number-weight, 200); letter-spacing: -0.045em; margin: 10px 0 6px -4px; }
+.bigTimer { font-size: 62px; }
+.of { font-size: 22px; font-weight: 300; color: var(--text-2); letter-spacing: -0.01em; }
+.under { font-size: 15px; color: var(--text-2); min-height: 22px; }
+.under :global(.numeric) { color: var(--text); }
 .statLabel { font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-2); }
-.statValue { font-size: 24px; font-weight: 300; letter-spacing: -0.02em; }
 
 /* Main action */
 .actions { display: flex; flex-direction: column; align-items: center; gap: 4px; padding-top: 4px; }
@@ -37,7 +35,6 @@
 /* One fixed-height slot under the button: quick actions, or the receipt after Finish. Nothing else moves. */
 .belowSlot { position: relative; width: 100%; height: 84px; margin-top: 10px; }
 .slotItem { position: absolute; inset: 0 0 auto; }
-.flight { position: absolute; left: 0; top: 0; translate: -50% -50%; z-index: 5; font-size: 38px; font-weight: 400; color: var(--text); pointer-events: none; white-space: nowrap; text-shadow: 0 0 24px rgb(var(--glow-run) / 0.9); }
 
 /* Quick actions */
 .chips { display: flex; flex-wrap: nowrap; justify-content: center; gap: 10px; }
@@ -86,8 +83,10 @@
 .field input { font-variant-numeric: tabular-nums; font-size: 22px; font-weight: 300; }
 
 /* Round 3: what sits under the big number (week bars, or the live shift line) */
-.heroVisual { position: relative; width: 100%; height: 118px; margin: 14px 0 6px; }
-.visualItem { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; }
+.heroVisual { position: relative; width: 100%; height: 104px; margin-top: 16px; }
+.visualItem { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: stretch; justify-content: flex-end; gap: 14px; }
+.visualItem > :global(*) { width: 100%; }
+.visualItem > .breakChip { width: auto; align-self: flex-start; }
 .paused { opacity: 0.55; }
 .breakChip { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 14px; border-radius: 999px; font-size: 13px; font-weight: 500; color: var(--text); background: var(--glass); box-shadow: inset 0 var(--hairline) 0 var(--glass-edge), 0 0 0 var(--hairline) var(--line); -webkit-backdrop-filter: blur(26px) saturate(1.35); backdrop-filter: blur(26px) saturate(1.35); }
 .breakChip svg { width: 16px; height: 16px; flex: none; }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useLayoutEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { AnimatePresence, m } from "motion/react";
 import { Bus, ChevronRight, Coffee, FastForward, Play, Plus, Settings2, Square } from "lucide-react";
 import { useNow } from "../features/use-now";
@@ -30,7 +30,7 @@ export const USUAL = { minutes: 450, label: "Route 2A", start: "06:00" };
 /** The Today screen as Headlight would draw it, wired to the lab's pretend data. */
 export default function Today(props: {
   phase: Phase; startedAt: number; endedAt: number; weekMinutes: number; todayMinutes: number; chipPulse: number; dateLabel: string;
-  saved: string | null; recent: RecentShift[]; mic: MicState; level: number; micSeconds: number; breaks: Break[]; weekDays: DayBar[];
+  saved: string | null; note?: string; recent: RecentShift[]; mic: MicState; level: number; micSeconds: number; breaks: Break[]; weekDays: DayBar[];
   onBreak: () => void; onStartUsual: () => void; onUndo: () => void; onStart: () => void; onFinish: () => void; onFastForward: () => void; onMic: () => void; onAddPast: () => void; onOpenShift: (shift: RecentShift) => void; onSettings: () => void;
 }) {
   const { phase, startedAt, endedAt, weekMinutes, todayMinutes, chipPulse, dateLabel, saved, recent } = props;
@@ -46,20 +46,11 @@ export default function Today(props: {
   const drivingSince = (end - lastBreakEnd) / 60000;
   const dueIn = BREAK_AFTER - drivingSince;
   const expectedEnd = startedAt + USUAL.minutes * 60000 + breakMs;
-  const screen = useRef<HTMLDivElement>(null), number = useRef<HTMLDivElement>(null), weekStat = useRef<HTMLDivElement>(null);
-  const [flight, setFlight] = useState<{ x: number; y: number; toX: number; toY: number; text: string } | null>(null);
+  const number = useRef<HTMLDivElement>(null);
   const [blooms, setBlooms] = useState<number[]>([]);
-
-  // When a shift finishes, its length lifts off the big number and flies into "This week".
-  useLayoutEffect(() => {
-    if (phase !== "landing") { setFlight(null); return; }
-    const box = screen.current?.getBoundingClientRect(), from = number.current?.getBoundingClientRect(), to = weekStat.current?.getBoundingClientRect();
-    if (!box || !from || !to) return;
-    setFlight({ x: from.left + from.width / 2 - box.left, y: from.top + from.height / 2 - box.top, toX: to.left + to.width / 2 - box.left, toY: to.top + to.height / 2 - box.top, text: `+${hm(Math.round((endedAt - startedAt) / 60000))}` });
-  }, [phase, endedAt, startedAt]);
+  const shifts = recent.filter(r => r.day !== "Last week").length;
 
   const left = Math.max(0, GOAL_MINUTES - weekMinutes);
-  const insight = onBreak ? "Take your time. The clock is paused." : running ? (dueIn <= 0 ? "Time for your break. Pull in when it's safe." : dueIn <= 30 ? "Break coming up. Find a good stop." : "Drive safe. I'm keeping count.") : saved ? "Nice shift. It's already in your week." : left === 0 ? "Goal reached. Everything from here is extra." : `${Math.round(left / 60)} hours to your goal. About ${Math.max(1, Math.round(left / 450))} more shifts.`;
   const hour = new Date().getHours();
   const greeting = onBreak ? "On a break" : running ? "On the road" : hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
 
@@ -69,7 +60,7 @@ export default function Today(props: {
     if (running) props.onFinish(); else props.onStart();
   }
 
-  return <div ref={screen} className={styles.screen}>
+  return <div className={styles.screen}>
     <m.header variants={item} className={styles.top}>
       <div>
         <p className={styles.eyebrow}>{dateLabel}</p>
@@ -80,47 +71,40 @@ export default function Today(props: {
       <m.button type="button" className={styles.roundButton} aria-label="Settings" onClick={props.onSettings} whileTap={{ scale: 0.92 }} transition={spring.tap}><Settings2/></m.button>
     </m.header>
 
-    <m.section variants={item} className={styles.hero}>
-      <AnimatePresence mode="popLayout" initial={false}>
-        <m.p key={onBreak ? "b" : phase === "idle" ? "w" : "s"} className={styles.eyebrow} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6, transition: fade }} transition={spring.snappy}>{onBreak ? "On break" : phase === "idle" ? "This week" : "On shift"}</m.p>
-      </AnimatePresence>
-      <div ref={number}>
-        <RollingNumber value={phase === "idle" ? hm(weekMinutes) : onBreak && currentBreak ? hms(end - currentBreak.start) : hms(elapsed)} className={`${styles.big} ${phase !== "idle" ? styles.bigTimer : ""} ${onBreak ? styles.paused : ""}`} label={phase === "idle" ? `${hm(weekMinutes)} worked this week` : `Shift time ${hms(elapsed)}`}/>
-      </div>
-      <AnimatePresence mode="popLayout" initial={false}>
-        <m.p key={phase === "idle" ? "g" : onBreak ? "pb" : "since"} className={styles.under} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, transition: fade }} transition={fade}>
-          {phase === "idle" ? <>of <span className="numeric">37 h</span> goal · <span className="numeric">{hm(Math.max(0, GOAL_MINUTES - weekMinutes))}</span> to go</>
-            : onBreak ? <>shift paused at <span className="numeric">{hms(elapsed)}</span></>
-            : <>usually done around <span className="numeric">{clockTime(expectedEnd)}</span></>}
-        </m.p>
-      </AnimatePresence>
-      <div className={styles.heroVisual}>
-        <AnimatePresence mode="popLayout" initial={false}>
-          {phase === "idle"
-            ? <m.div key="bars" className={styles.visualItem} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8, transition: spring.exit }} transition={spring.settle}><WeekBars days={props.weekDays}/></m.div>
-            : <m.div key="line" className={styles.visualItem} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8, transition: spring.exit }} transition={spring.settle}>
-              <ShiftLine startedAt={startedAt} now={end} breaks={breaks} usualMinutes={USUAL.minutes} startLabel={clockTime(startedAt)} endLabel={`~${clockTime(expectedEnd)}`}/>
-              <m.div layout className={`${styles.breakChip} ${dueIn <= 0 && !onBreak ? styles.breakDue : ""}`} transition={spring.snappy}>
-                <Coffee aria-hidden="true"/>
-                <span className="numeric">{onBreak ? "Break counts toward your 45 min" : dueIn <= 0 ? "45 min break due now" : `45 min break due in ${hm(dueIn)}`}</span>
-              </m.div>
-            </m.div>}
-        </AnimatePresence>
-      </div>
-      <AnimatePresence mode="popLayout" initial={false}>
-        <m.p key={insight} className={`${styles.insight} serif`} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8, transition: fade }} transition={spring.smooth}>{insight}</m.p>
-      </AnimatePresence>
-    </m.section>
-
-    <m.div variants={item}>
-      <Glass blur className={styles.stats}>
-        <Stat label="Today" value={hm(todayMinutes + (running ? elapsed / 60000 : 0))}/>
-        <div ref={weekStat} className={styles.statWrap}>
-          <m.div key={chipPulse} initial={chipPulse ? { scale: 1.14 } : false} animate={{ scale: 1 }} transition={spring.reward}><Stat label="This week" value={hm(weekMinutes)}/></m.div>
+    <m.section variants={item}>
+      <Glass blur className={`${styles.heroCard} ${running ? styles.heroLive : ""}`}>
+        <div className={styles.heroHead}>
+          <AnimatePresence mode="popLayout" initial={false}>
+            <m.p key={onBreak ? "b" : phase === "idle" ? "w" : "s"} className={styles.eyebrow} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6, transition: fade }} transition={spring.snappy}>{onBreak ? "On break" : phase === "idle" ? "This week" : "On shift"}</m.p>
+          </AnimatePresence>
+          <span className={`${styles.heroMeta} numeric`}>{phase === "idle" ? `${shifts} shifts · ${hm(todayMinutes)} today` : props.note ?? `Since ${clockTime(startedAt)}`}</span>
         </div>
-        <Stat label="Shifts" value={String(recent.filter(r => r.day !== "Last week").length)}/>
+        <m.div ref={number} key={chipPulse} className={styles.heroNumber} initial={chipPulse ? { scale: 1.06 } : false} animate={{ scale: 1 }} transition={spring.reward}>
+          <RollingNumber value={phase === "idle" ? hm(weekMinutes) : onBreak && currentBreak ? hms(end - currentBreak.start) : hms(elapsed)} className={`${styles.big} ${phase !== "idle" ? styles.bigTimer : ""} ${onBreak ? styles.paused : ""}`} label={phase === "idle" ? `${hm(weekMinutes)} worked this week` : `Shift time ${hms(elapsed)}`}/>
+          <AnimatePresence initial={false}>{phase === "idle" && <m.span key="of" className={`${styles.of} numeric`} initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, transition: fade }} transition={spring.smooth}>/ 37 h</m.span>}</AnimatePresence>
+        </m.div>
+        <AnimatePresence mode="popLayout" initial={false}>
+          <m.p key={phase === "idle" ? "g" : onBreak ? "pb" : "since"} className={styles.under} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, transition: fade }} transition={fade}>
+            {phase === "idle" ? (left === 0 ? "Goal reached. The rest is extra." : <><span className="numeric">{hm(left)}</span> to go · about {Math.max(1, Math.round(left / 450))} more shifts</>)
+              : onBreak ? <>Shift paused at <span className="numeric">{hms(elapsed)}</span>. Take your time.</>
+              : <>Usually done around <span className="numeric">{clockTime(expectedEnd)}</span></>}
+          </m.p>
+        </AnimatePresence>
+        <div className={styles.heroVisual}>
+          <AnimatePresence mode="popLayout" initial={false}>
+            {phase === "idle"
+              ? <m.div key="bars" className={styles.visualItem} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8, transition: spring.exit }} transition={spring.settle}><WeekBars days={props.weekDays}/></m.div>
+              : <m.div key="line" className={styles.visualItem} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8, transition: spring.exit }} transition={spring.settle}>
+                <ShiftLine startedAt={startedAt} now={end} breaks={breaks} usualMinutes={USUAL.minutes} startLabel={clockTime(startedAt)} endLabel={`~${clockTime(expectedEnd)}`}/>
+                <m.div layout className={`${styles.breakChip} ${dueIn <= 0 && !onBreak ? styles.breakDue : ""}`} transition={spring.snappy}>
+                  <Coffee aria-hidden="true"/>
+                  <span className="numeric">{onBreak ? "Break counts toward your 45 min" : dueIn <= 0 ? "45 min break due now" : `45 min break due in ${hm(dueIn)}`}</span>
+                </m.div>
+              </m.div>}
+          </AnimatePresence>
+        </div>
       </Glass>
-    </m.div>
+    </m.section>
 
     <m.div variants={item} className={styles.actions}>
       <div className={`${styles.mainWrap} ${running ? styles.breathing : ""}`}>
@@ -170,13 +154,6 @@ export default function Today(props: {
       </Glass>
     </m.section>
 
-    {flight && <m.span key={`${endedAt}`} className={`${styles.flight} numeric`} aria-hidden="true"
-      initial={{ x: flight.x, y: flight.y, scale: 1.1, opacity: 0 }}
-      animate={{ x: flight.toX, y: flight.toY, scale: 0.5, opacity: [0, 1, 1, 0] }}
-      transition={{ x: spring.smooth, y: spring.smooth, scale: spring.smooth, opacity: { duration: 0.6, times: [0, 0.15, 0.75, 1] } }}>{flight.text}</m.span>}
   </div>;
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
-  return <div className={styles.stat}><span className={styles.statLabel}>{label}</span><RollingNumber value={value} className={styles.statValue}/></div>;
-}
