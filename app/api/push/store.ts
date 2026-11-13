@@ -65,11 +65,13 @@ export async function writeDevice(device: Device, etag?: string): Promise<string
 
 export async function removeDevice(endpoint: string) { await del(fileFor(endpoint)); }
 
-/** Keeps at most a handful of phones: the oldest go first. */
-export async function trimDevices() {
-  const all = await readDevices();
-  const extra = all.slice(0, Math.max(0, all.length - MAX_DEVICES));
-  if (extra.length) await del(extra.map(x => x.pathname));
+/**
+ * True when there is no room for another phone. A full list refuses newcomers instead of dropping
+ * the oldest, so nobody can push a working phone out by registering made-up ones.
+ */
+export async function devicesFull() {
+  const { blobs } = await list({ prefix: DIR, limit: MAX_DEVICES + 1 });
+  return blobs.length >= MAX_DEVICES;
 }
 
 export type Payload = { title: string; body: string; tag: string; action?: ReminderAction };
