@@ -43,3 +43,16 @@ test("once signed in to stay, Gmail is ready to send with no Google window", asy
   expect(asked).toContain("token");
   expect(asked).not.toContain("connect");
 });
+
+test("a saved client secret can be replaced", async ({ page }) => {
+  await page.addInitScript(id => localStorage.setItem("routehours:google-secret:" + id, "GOCSPX-typo"), clientId);
+  await openApp(page);
+  await page.getByRole("button", { name: "Settings" }).click();
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  await settings.getByRole("button", { name: "Connections" }).click();
+  await settings.getByLabel(/Google Web client ID/).fill(clientId);
+  await settings.getByRole("button", { name: "Replace client secret" }).click();
+  await settings.getByLabel(/^Client secret/).fill("GOCSPX-right");
+  await settings.getByRole("button", { name: "Save client secret" }).click();
+  expect(await page.evaluate(id => localStorage.getItem("routehours:google-secret:" + id), clientId)).toBe("GOCSPX-right");
+});

@@ -49,6 +49,11 @@ export default function GoogleSetup({ clientId, onChange, onSave, connectedEmail
     rememberGoogleSecret(normalized, value); setSecret(""); setHasSecret(true);
     setSecretNote("Saved. Tap Connect Google once more, and you'll stay signed in.");
   }
+  /** A mistyped or rotated secret must be fixable without clearing the phone's storage. */
+  function replaceSecret() {
+    rememberGoogleSecret(normalized, ""); setHasSecret(false);
+    setSecretNote("Paste the new client secret below.");
+  }
   async function signOut() {
     await disconnectGoogle(normalized);
     for (const service of ["google", "drive", "gmail"] as const) clearGoogleSession(normalized, service);
@@ -87,7 +92,7 @@ export default function GoogleSetup({ clientId, onChange, onSave, connectedEmail
         <div><strong>Stay signed in</strong><p>{linked ? "On. Sending and backups work without a Google window." : "Without this, Google signs you out after an hour and asks again every time you send."}</p></div>
       </div>
       {linked ? <button type="button" className="text-action" onClick={() => void signOut()}>Sign out of Google on this phone</button> : hasSecret
-        ? <p className="origin-help">Client secret saved. Tap <strong>{connectedEmail ? "Change Google account" : "Connect Google"}</strong> once to finish.</p>
+        ? <><p className="origin-help">Client secret saved. Tap <strong>{connectedEmail ? "Change Google account" : "Connect Google"}</strong> once to finish.</p><button type="button" className="text-action" onClick={replaceSecret}>Replace client secret</button></>
         : <>
           <label className="access-label" htmlFor="google-client-secret">Client secret
             <small>In <a href={clientsUrl} target="_blank" rel="noopener noreferrer">Google Cloud Clients</a>, open your Web client and tap <strong>Add secret</strong>. Copy it here. It stays on this phone and in a private cookie only RouteHours&apos; server can read.</small>

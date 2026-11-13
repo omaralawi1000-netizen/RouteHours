@@ -68,6 +68,7 @@ export async function refreshGoogle(clientId: string, service: GoogleService, si
 export function connectGoogle(clientId: string, secret: string, options: { loginHint?: string; chooseAccount?: boolean; signal?: AbortSignal } = {}): Promise<OfflineAccount> {
   return new Promise((resolve, reject) => {
     const init = typeof window === 'undefined' ? undefined : (window as GoogleBrowser).google?.accounts?.oauth2?.initCodeClient;
+    if (options.signal?.aborted) { reject(new Error('Google connection cancelled.')); return; }
     if (!init) { reject(new Error('Google sign-in has not loaded. Check your connection, then reload RouteHours and try again.')); return; }
     let done = false;
     const finish = (error?: Error, value?: OfflineAccount) => { if (done) return; done = true; if (error) reject(error); else resolve(value!); };

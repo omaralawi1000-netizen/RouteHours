@@ -114,6 +114,8 @@ export async function authorizeGoogleAccount(clientId: string, service: GoogleSe
     const cached=cachedGoogleAccount(id,service);if(cached)return cached;
     // Signed in to stay: a fresh hour of access from the server, with no Google window.
     const refreshed=await refreshGoogle(id,service,options.signal);if(refreshed)return rememberGoogleGrant(id,service,refreshed);
+    // Closed while the refresh was pending: never open a Google window for a screen that's gone.
+    if(options.signal?.aborted) throw new Error('Google connection cancelled.');
   }
   else clearGoogleSession(id,service);
   const email = options.forceAccountChoice ? '' : savedGoogleEmail(id,service);

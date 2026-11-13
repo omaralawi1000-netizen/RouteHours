@@ -40,3 +40,23 @@ test('refresh asks the server only when this phone stayed signed in, and forgets
     assert.equal(staysSignedIn(id), false);
   } finally { env.restore(); }
 });
+
+test('a cancelled screen never opens the Google window', async () => {
+  let opened = 0;
+  const env = setup();
+  (window as unknown as { google: unknown }).google = { accounts: { oauth2: { initCodeClient: () => ({ requestCode: () => { opened++; } }) } } };
+  try {
+    const { connectGoogle } = await import('./google-offline.ts');
+    const controller = new AbortController(); controller.abort();
+    await assert.rejects(connectGoogle(id, 'GOCSPX-x', { signal: controller.signal }), /cancelled/);
+    const { authorizeGoogleAccount } = await import('./google-auth.ts');
+    env.local.set('routehours:google-stay:' + id, 'driver@example.com');
+    env.local.set('routehours:google-secret:' + id, 'GOCSPX-x');
+    globalThis.fetch = (async (_url: unknown, init?: RequestInit) => { await new Promise((_, reject) => init?.signal?.addEventListener('abort', () => reject(new Error('aborted')))); return new Response('{}'); }) as typeof fetch;
+    const pending = new AbortController();
+    const result = authorizeGoogleAccount(id, 'gmail', ['https://www.googleapis.com/auth/gmail.send'], { signal: pending.signal });
+    pending.abort();
+    await assert.rejects(result, /cancelled/);
+    assert.equal(opened, 0);
+  } finally { env.restore(); }
+});
