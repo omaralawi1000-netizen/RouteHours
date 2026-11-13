@@ -30,6 +30,7 @@ test("input is checked before it is stored", () => {
   assert.equal(cleanSubscription({ endpoint: "http://fcm.googleapis.com/x", keys: { p256dh: "k", auth: "a" } }), null);
   assert.ok(cleanSubscription({ endpoint: "https://fcm.googleapis.com/fcm/send/x", keys: { p256dh: "k", auth: "a" } }));
   assert.deepEqual(cleanReminders([{ time: "25:00" }, { time: "06:40", action: "finish", title: "x".repeat(99) }]).map(r => [r.time, r.action, r.title.length]), [["06:40", "finish", 60]]);
+  assert.deepEqual(cleanReminders([{ time: "06:25", action: "leave" }, { time: "06:40", action: "nope" }]).map(r => r.action), ["leave", "start"]);
   assert.deepEqual(cleanDays([5, 1, 1, 9, "2"]), [1, 5]);
   assert.deepEqual(cleanDays(undefined), [1, 2, 3, 4, 5]);
 });

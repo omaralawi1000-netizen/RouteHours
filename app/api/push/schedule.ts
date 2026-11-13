@@ -1,6 +1,6 @@
 /** Pure helpers for shift reminders: checking input and working out what is due. No network here. */
 
-export type ReminderAction = "start" | "finish";
+export type ReminderAction = "start" | "finish" | "leave";
 export type Reminder = { id: string; time: string; title: string; body: string; action: ReminderAction };
 export type Device = {
   endpoint: string;
@@ -31,7 +31,7 @@ export function cleanReminders(value: unknown): Reminder[] {
     if (!r || typeof r !== "object") return [];
     const x = r as Record<string, unknown>;
     if (typeof x.time !== "string" || !/^([01]\d|2[0-3]):[0-5]\d$/.test(x.time)) return [];
-    const action: ReminderAction = x.action === "finish" ? "finish" : "start";
+    const action: ReminderAction = x.action === "finish" || x.action === "leave" ? x.action : "start";
     const text = (s: unknown, max: number) => typeof s === "string" ? s.trim().slice(0, max) : "";
     return [{ id: text(x.id, 40) || `r${i}`, time: x.time, title: text(x.title, 60) || "RouteHours", body: text(x.body, 140), action }];
   });

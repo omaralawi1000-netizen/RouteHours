@@ -1,4 +1,4 @@
-const CACHE = "routehours-shell-v11";
+const CACHE = "routehours-shell-v12";
 const SHELL = ["/", "/manifest.webmanifest", "/icon-192-v3.png", "/icon-512-v3.png", "/icon-maskable-v3.png", "/apple-icon-v3.png"];
 
 self.addEventListener("install", event => {

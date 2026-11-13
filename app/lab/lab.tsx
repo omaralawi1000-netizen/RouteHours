@@ -22,8 +22,7 @@ import WeekStrip, { type WeekData } from "../ui/week-strip";
 import { setHaptics, tick } from "../ui/haptics";
 import { spring, springSpec, type SpringName } from "../ui/motion";
 import Today, { clockTime, DAY_PARTS, hm, nextPart, usualDayMinutes, type Layout, type Phase, type RecentShift } from "./today";
-import Reminders from "./reminders";
-import { BusRouteSettings, useBusRoute } from "./bus-route";
+import Reminders, { useTravel } from "./reminders";
 import { item, screen } from "./stagger";
 import styles from "./lab.module.css";
 
@@ -45,6 +44,7 @@ type DayMark = "worked" | "syg" | "fri";
 const SCENE_KEY = "routehours:lab-wallpaper";
 const LAYOUT_KEY = "routehours:lab-layout-v4";
 const FONT_KEY = "routehours:lab-font-v2";
+const RUN_KEY = "routehours:lab-run";
 type FontId = "modern" | "clean" | "character" | "editorial";
 const FONTS: { value: FontId; label: string }[] = [{ value: "modern", label: "Modern" }, { value: "clean", label: "Clean" }, { value: "character", label: "Bold" }, { value: "editorial", label: "Serif" }];
 const LAYOUTS: { value: Layout; label: string }[] = [{ value: "card", label: "Card" }, { value: "focus", label: "Focus" }, { value: "bento", label: "Tiles" }, { value: "horizon", label: "Sheet" }];
@@ -136,7 +136,25 @@ export default function Lab() {
   const [breaks, setBreaks] = useState<Break[]>([]);
   const [note, setNote] = useState<string | undefined>();
   const [stillDriving, setStillDriving] = useState(false);
-  const bus = useBusRoute();
+  const [travel, setTravel] = useTravel();
+  // A running shift survives closing the app, so Finish from a shortcut or a reminder still finds it.
+  const restored = useRef(false);
+  useEffect(() => {
+    try {
+      const run = JSON.parse(localStorage.getItem(RUN_KEY) ?? "null") as { startedAt?: number; breaks?: Break[]; note?: string; stillDriving?: boolean } | null;
+      if (run && typeof run.startedAt === "number" && Date.now() - run.startedAt < 16 * 3600000) {
+        setStartedAt(run.startedAt); setBreaks(Array.isArray(run.breaks) ? run.breaks : []); setNote(run.note); setStillDriving(!!run.stillDriving); setPhase("running");
+      }
+    } catch { /* start fresh */ }
+    restored.current = true;
+  }, []);
+  useEffect(() => {
+    if (!restored.current) return;
+    try {
+      if (phase === "running") localStorage.setItem(RUN_KEY, JSON.stringify({ startedAt, breaks, note, stillDriving }));
+      else if (phase === "idle") localStorage.removeItem(RUN_KEY);
+    } catch { /* kept for this visit */ }
+  }, [phase, startedAt, breaks, note, stillDriving]);
   function start(withNote?: string) { tick(); setSaved(null); setBreaks([]); setNote(withNote); setStillDriving(false); setStartedAt(Date.now()); setPhase("running"); }
   function startUsual() {
     const part = nextPart();
@@ -175,7 +193,7 @@ export default function Lab() {
   // A tap on a reminder's button lands here: from the link it opened (?do=start) or a message from the service worker.
   const fromReminder = useRef<(action: string) => void>(() => {});
   useEffect(() => { fromReminder.current = action => {
-    if (action === "start") { if (phase === "running") say("Already on shift"); else { const part = nextPart(); start(part?.label); say(part ? `${part.label} shift started from your reminder` : "Shift started from your reminder"); } }
+    if (action === "start") { if (phase === "running") say("Already on shift"); else { const part = nextPart(); start(part?.label); say(part ? `${part.label} shift started. Usually done at ${part.end}.` : "Shift started"); } }
     else if (action === "finish") { if (phase === "running") finish(); else say("No shift is running"); }
     else if (action === "still") { if (phase === "running") keepDriving(); else say("No shift is running"); }
   }; });
@@ -238,7 +256,7 @@ export default function Lab() {
           {mounted && <m.main key={tab} className={styles.page} custom={direction} variants={screen} initial={opened ? "enter" : "hidden"} animate="show" exit="leave">
             {tab === "today" && <Today phase={phase} startedAt={startedAt} endedAt={endedAt} weekMinutes={weekMinutes} todayMinutes={todayMinutes} chipPulse={chipPulse} dateLabel={dateLabel}
               recent={recent} mic={mic} level={level} micSeconds={micSeconds}
-              layout={layout} note={note} breaks={breaks} weekDays={weekDays} onBreak={toggleBreak} onStartUsual={startUsual} onLogUsualDay={logUsualDay} dayOff={mark !== "worked"} stillDriving={stillDriving} onStillDriving={keepDriving} onAutoFinish={autoFinish} busRoute={bus.route}
+              layout={layout} note={note} breaks={breaks} weekDays={weekDays} onBreak={toggleBreak} onStartUsual={startUsual} onLogUsualDay={logUsualDay} dayOff={mark !== "worked"} stillDriving={stillDriving} onStillDriving={keepDriving} onAutoFinish={autoFinish} travel={travel}
               onUndo={undoFinish} onStart={() => start()} onFinish={() => finish()} onFastForward={() => { setStartedAt(value => value - 3_600_000); setBreaks(list => list.map(b => ({ start: b.start - 3_600_000, end: b.end && b.end - 3_600_000 }))); }} onMic={toggleMic}
               onAddPast={() => setEditing({ id: -1, day: "New", start: "06:00", end: "14:00", minutes: 480 })} onOpenShift={setEditing} onSettings={() => changeTab("lab")}/>}
 
@@ -274,8 +292,7 @@ export default function Lab() {
               <m.header variants={item} className={styles.top}>
                 <div><p className={styles.eyebrow}>Headlight lab</p><h1 className={`${styles.title} serif`}>Tune the look</h1></div>
               </m.header>
-              <m.section variants={item}><Reminders say={say}/></m.section>
-              <m.section variants={item}><BusRouteSettings route={bus.route} onSave={bus.save} say={say}/></m.section>
+              <m.section variants={item}><Reminders say={say} travel={travel} onTravel={setTravel}/></m.section>
               <m.section variants={item}>
                 <Glass blur className={styles.card}>
                   <div className={styles.cardHead}><h2 className={`${styles.cardTitle} serif`}>Layout and font</h2></div>

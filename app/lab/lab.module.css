@@ -194,19 +194,3 @@
 .reminderList li > span:first-child { font-weight: 600; }
 .reminderTag { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-2); padding: 3px 8px; border-radius: 999px; background: var(--press); }
 
-/* Bus route: one tap from Today to the next departure in Google Maps. */
-.busLink { display: block; color: inherit; text-decoration: none; border-radius: var(--radius-card); -webkit-tap-highlight-color: transparent; }
-.busCard { display: flex; align-items: center; gap: 12px; padding: 12px 12px 12px 14px; border-radius: 24px; }
-.busIcon { flex: none; width: 40px; height: 40px; display: grid; place-items: center; border-radius: 14px; color: var(--on-accent); background: linear-gradient(160deg, #FFE3A8, var(--accent)); box-shadow: var(--lift-shadow), inset 0 1px 0 rgb(255 255 255 / 0.55); }
-.busIcon svg { width: 20px; height: 20px; }
-.busText { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-.busTitle { font-size: 16px; font-weight: 600; }
-.busRoute { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 16px; font-weight: 600; }
-.busRoute > span:not(.busLine) { flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.busLine { flex: 0 1 40px; min-width: 16px; height: 6px; background: radial-gradient(circle, var(--accent) 1.6px, transparent 2px) 0 50% / 8px 6px repeat-x; opacity: 0.85; }
-.busGo { flex: none; width: 40px; height: 40px; display: grid; place-items: center; border-radius: 50%; color: var(--accent); background: var(--press); box-shadow: inset 0 0 0 var(--hairline) var(--line); }
-.busGo svg { width: 20px; height: 20px; }
-.busAdd { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px; border: 0; border-radius: 22px; text-align: left; cursor: pointer; color: var(--text); background: none; box-shadow: inset 0 0 0 var(--hairline) var(--line); }
-.busAdd .busIcon { color: var(--accent); background: var(--press); box-shadow: none; }
-.busSaved { display: flex; align-items: center; gap: 12px; padding: 10px 6px 10px 10px; border-radius: 20px; background: var(--press); box-shadow: var(--inset-shadow); }
-.linkInput { font-size: 16px !important; font-weight: 400 !important; font-variant-numeric: normal !important; }

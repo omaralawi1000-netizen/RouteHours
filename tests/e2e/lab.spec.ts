@@ -87,4 +87,27 @@ test.describe("lab: the usual split day", () => {
     await expect(page.locator(`[aria-label="18:52 worked this week"]`)).toBeVisible();
     await expect(page.getByText("Nothing logged today. Was it your usual day?")).toBeHidden();
   });
+
+  test("the leave-now card shows when it's time to head out, and can be turned off", async ({ page }) => {
+    await page.clock.setFixedTime(new Date("2026-11-13T05:30:00Z")); // 06:30, 15 min before 06:45
+    await page.goto("/lab");
+    await expect(page.getByText("Time to leave. Morning shift at 06:45.")).toBeVisible();
+    await page.getByRole("button", { name: "Lab", exact: true }).click();
+    await expect(page.getByText("Leave for the morning shift")).toBeVisible();
+    await page.getByRole("radiogroup", { name: "Time to get there" }).getByRole("radio", { name: "Off" }).click();
+    await page.getByRole("button", { name: "Today", exact: true }).click();
+    await expect(page.getByText("Time to leave.", { exact: false })).toHaveCount(0);
+  });
+
+  test("the home-screen shortcuts start a shift, and Finish still finds it after the app was closed", async ({ page }) => {
+    await page.clock.setFixedTime(new Date("2026-11-13T11:20:00Z")); // 12:20
+    await page.goto("/lab?do=start");
+    await expect(page.getByText("Afternoon shift started. Usually done at 14:45.")).toBeVisible();
+    await expect(page).toHaveURL(/\/lab$/);
+    await page.clock.setFixedTime(new Date("2026-11-13T13:40:00Z")); // 14:40
+    await page.goto("/lab?do=finish");
+    await expect(page.getByText("Shift saved")).toBeVisible();
+    await page.reload();
+    await expect(page.getByRole("button", { name: "Start shift" })).toBeVisible();
+  });
 });

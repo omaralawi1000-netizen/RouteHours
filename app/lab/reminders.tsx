@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { BellRing, Send } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { BellRing, Footprints, Send } from "lucide-react";
 import Button from "../ui/button";
 import Glass from "../ui/glass";
+import SegmentedControl from "../ui/segmented-control";
 import Toggle from "../ui/toggle";
 import { DAY_PARTS } from "./today";
 import styles from "./lab.module.css";
@@ -17,6 +18,27 @@ export const REMINDERS = [
   { id: "afternoon-start", time: minus(AFTERNOON.start, 5), action: "start", title: `Afternoon shift at ${AFTERNOON.start}`, body: "Tap Start shift when you pull out." },
   { id: "afternoon-end", time: AFTERNOON.end, action: "finish", title: "End of the afternoon run?", body: `Usually done at ${AFTERNOON.end}. Tap Finish shift.` },
 ] as const;
+type Reminder = { id: string; time: string; action: "start" | "finish" | "leave"; title: string; body: string };
+
+/** "Leave now": minutes before each usual start. Zero means off. */
+export const TRAVEL_OPTIONS = [0, 15, 20, 30, 45] as const;
+export type Travel = (typeof TRAVEL_OPTIONS)[number];
+const TRAVEL_KEY = "routehours:lab-travel";
+export function leaveAt(start: string, travel: number) { return minus(start, travel); }
+
+/** The full list for a given trip length: the leave nudges slot in before each start. */
+export function remindersFor(travel: number): Reminder[] {
+  const leave: Reminder[] = travel ? [MORNING, AFTERNOON].map(part => ({ id: `${part.id}-leave`, time: leaveAt(part.start, travel), action: "leave", title: `Leave for the ${part.label.toLowerCase()} shift`, body: `It starts at ${part.start}. About ${travel} min to get there.` })) : [];
+  return [...leave, ...REMINDERS].sort((a, b) => a.time.localeCompare(b.time));
+}
+
+export function useTravel(): [Travel, (next: Travel) => void] {
+  const [travel, setTravel] = useState<Travel>(20);
+  useEffect(() => {
+    try { const saved = Number(localStorage.getItem(TRAVEL_KEY)); if (localStorage.getItem(TRAVEL_KEY) !== null && (TRAVEL_OPTIONS as readonly number[]).includes(saved)) setTravel(saved as Travel); } catch { /* default */ }
+  }, []);
+  return [travel, next => { setTravel(next); try { localStorage.setItem(TRAVEL_KEY, String(next)); } catch { /* kept for this visit */ } }];
+}
 const KEY = "routehours:lab-reminders";
 
 type Server = { publicKey: string | null; push: boolean; store: boolean };
@@ -28,7 +50,7 @@ function keyBytes(base64: string) {
 }
 
 /** Lock-screen reminders with Start and Finish buttons, so the shift is one tap away even with the app closed. */
-export default function Reminders({ say }: { say: (text: string) => void }) {
+export default function Reminders({ say, travel, onTravel }: { say: (text: string) => void; travel: Travel; onTravel: (next: Travel) => void }) {
   const [server, setServer] = useState<Server | null>(null);
   const [state, setState] = useState<State>("off");
 
@@ -53,7 +75,7 @@ export default function Reminders({ say }: { say: (text: string) => void }) {
       const sub = await subscription(true);
       if (!sub) throw new Error("No subscription");
       if (server?.store) {
-        const res = await fetch("/api/push/subscribe", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ subscription: sub.toJSON(), reminders: REMINDERS, days: [1, 2, 3, 4, 5] }) });
+        const res = await fetch("/api/push/subscribe", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ subscription: sub.toJSON(), reminders: remindersFor(travel), days: [1, 2, 3, 4, 5] }) });
         if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? "Couldn't save the reminders.");
         say("Reminders on, Monday to Friday");
       } else say("This phone is ready. Daily reminders start once storage is set up.");
@@ -61,6 +83,15 @@ export default function Reminders({ say }: { say: (text: string) => void }) {
       setState("on");
     } catch (error) { setState("off"); say(error instanceof Error ? error.message : "Couldn't turn reminders on"); }
   }
+
+  // A new trip length re-saves this phone's list, so the server sends the new leave time.
+  const synced = useRef(travel);
+  useEffect(() => {
+    if (synced.current === travel || state !== "on" || !server?.store) return;
+    synced.current = travel;
+    subscription(false).then(sub => sub && fetch("/api/push/subscribe", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ subscription: sub.toJSON(), reminders: remindersFor(travel), days: [1, 2, 3, 4, 5] }) }))
+      .then(res => { if (res && !res.ok) say("Couldn't update the leave time on the server"); }).catch(() => say("Couldn't update the leave time on the server"));
+  }, [travel, state, server]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function turnOff() {
     setState("busy");
@@ -93,8 +124,13 @@ export default function Reminders({ say }: { say: (text: string) => void }) {
       <div className={styles.reminderText}><p>Remind me</p><p className={styles.hint}>{hint}</p></div>
       <Toggle label="Shift reminders" checked={state === "on"} onChange={on => { if (state === "busy" || state === "unsupported" || !ready) return; if (on) turnOn(); else turnOff(); }}/>
     </div>
+    <div className={styles.reminderRow}>
+      <span className={styles.reminderIcon}><Footprints aria-hidden="true"/></span>
+      <div className={styles.reminderText}><p>Leave now</p><p className={styles.hint}>{travel ? `Minutes to get there. Nudges you ${travel} min before each start.` : "Off. No nudge to head out."}</p></div>
+    </div>
+    <SegmentedControl label="Time to get there" value={String(travel)} onChange={v => onTravel(Number(v) as Travel)} options={TRAVEL_OPTIONS.map(t => ({ value: String(t), label: t ? String(t) : "Off" }))}/>
     <ul className={styles.reminderList}>
-      {REMINDERS.map(r => <li key={r.id}><span className="numeric">{r.time}</span><span>{r.title}</span><span className={styles.reminderTag}>{r.action === "start" ? "Start" : "Finish"}</span></li>)}
+      {remindersFor(travel).map(r => <li key={r.id}><span className="numeric">{r.time}</span><span>{r.title}</span><span className={styles.reminderTag}>{r.action === "start" ? "Start" : r.action === "leave" ? "Leave" : "Finish"}</span></li>)}
     </ul>
     <Button variant="glass" size="small" icon={<Send/>} onClick={test} disabled={state !== "on"}>Send a test now</Button>
   </Glass>;

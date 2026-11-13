@@ -1,16 +1,14 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, m } from "motion/react";
-import { Bus, ChevronRight, Coffee, FastForward, Flag, Play, Plus, Settings2, Square, Sun, TriangleAlert, X } from "lucide-react";
+import { Bus, ChevronRight, Footprints, Coffee, FastForward, Flag, Play, Plus, Settings2, Square, Sun, TriangleAlert, X } from "lucide-react";
 import { useNow } from "../features/use-now";
 import Button from "../ui/button";
 import Glass from "../ui/glass";
 import MicPill, { type MicState } from "../ui/mic-pill";
 import RollingNumber from "../ui/rolling-number";
 import RouteLine from "../ui/route-line";
-import { BusCard } from "./bus-route";
-import type { MapsRoute } from "../api/maps/parse";
 import { type Break } from "../ui/shift-line";
 import WeekBars, { type DayBar } from "../ui/week-bars";
 import { fade, spring } from "../ui/motion";
@@ -50,13 +48,13 @@ export function nextPart(at = Date.now()): DayPart | null {
   return now < toMinutes("10:30") ? DAY_PARTS[0] : now < toMinutes("14:00") ? DAY_PARTS[1] : null;
 }
 export const usualDayMinutes = DAY_PARTS.reduce((sum, p) => sum + p.minutes, 0);
-export type Alert = { id: string; text: string; action?: { label: string; onClick: () => void }; alt?: { label: string; onClick: () => void } };
+export type Alert = { id: string; text: string; icon?: ReactNode; action?: { label: string; onClick: () => void }; alt?: { label: string; onClick: () => void } };
 
 /** The Today screen as Headlight would draw it, wired to the lab's pretend data. */
 export default function Today(props: {
   phase: Phase; startedAt: number; endedAt: number; weekMinutes: number; todayMinutes: number; chipPulse: number; dateLabel: string;
   note?: string; layout: Layout; recent: RecentShift[]; mic: MicState; level: number; micSeconds: number; breaks: Break[]; weekDays: DayBar[];
-  dayOff?: boolean; onLogUsualDay: () => void; stillDriving?: boolean; onStillDriving: () => void; onAutoFinish: (at: number) => void; busRoute?: MapsRoute | null;
+  dayOff?: boolean; onLogUsualDay: () => void; stillDriving?: boolean; onStillDriving: () => void; onAutoFinish: (at: number) => void; travel?: number;
   onBreak: () => void; onStartUsual: () => void; onUndo: () => void; onStart: () => void; onFinish: () => void; onFastForward: () => void; onMic: () => void; onAddPast: () => void; onOpenShift: (shift: RecentShift) => void; onSettings: () => void;
 }) {
   const { phase, startedAt, endedAt, weekMinutes, todayMinutes, chipPulse, dateLabel, recent } = props;
@@ -148,6 +146,8 @@ export default function Today(props: {
   const alerts: Alert[] = [];
   if (running && elapsed > 10 * 3600000) alerts.push({ id: "long", text: "This shift has run over 10 hours. Forgot to finish?", action: { label: "Finish", onClick: props.onFinish } });
   else if (running && !onBreak && part && !props.stillDriving && clockNow > toMinutes(part.end) + 30) alerts.push({ id: `late-${part.id}`, text: `Past ${part.end}. Still driving? It stops by itself at ${minutesToClock(toMinutes(part.end) + AUTO_FINISH_AFTER)}.`, action: { label: "Finish", onClick: props.onFinish }, alt: { label: "Still driving", onClick: props.onStillDriving } });
+  const leaveFrom = upcoming && props.travel ? toMinutes(upcoming.start) - props.travel : null;
+  if (idle && weekday && !props.dayOff && upcoming && leaveFrom !== null && clockNow >= leaveFrom && clockNow < toMinutes(upcoming.start)) alerts.push({ id: `leave-${upcoming.id}`, text: `Time to leave. ${upcoming.label} shift at ${upcoming.start}.`, icon: <Footprints/> });
   if (idle && weekday && !props.dayOff && todayMinutes === 0 && clockNow >= 15 * 60 + 30) alerts.push({ id: "empty", text: "Nothing logged today. Was it your usual day?", action: { label: "Log it", onClick: props.onLogUsualDay } });
   const alert = hydrated ? alerts.find(a => !dismissed.includes(a.id)) ?? null : null;
 
@@ -163,7 +163,7 @@ export default function Today(props: {
   }, [autoDue, startedAt, usualEndAt, props]);
   const alertCard = <AnimatePresence initial={false} mode="popLayout">
     {alert && <m.section key={alert.id} layout className={styles.alert} role="status" initial={{ opacity: 0, y: -10, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, scale: 0.96, transition: spring.exit }} transition={spring.settle}>
-      <span className={styles.alertIcon}><TriangleAlert aria-hidden="true"/></span>
+      <span className={styles.alertIcon} aria-hidden="true">{alert.icon ?? <TriangleAlert/>}</span>
       <p className={styles.alertText}>{alert.text}</p>
       {alert.alt && <button type="button" className={styles.alertAlt} onClick={() => { setDismissed(list => [...list, alert.id]); alert.alt?.onClick(); }}>{alert.alt.label}</button>}
       {alert.action && <Button variant="glass" size="small" onClick={() => { setDismissed(list => [...list, alert.id]); alert.action?.onClick(); }}>{alert.action.label}</Button>}
@@ -172,9 +172,6 @@ export default function Today(props: {
   </AnimatePresence>;
 
   // Off shift only: while driving, the route is the job, not the trip to it.
-  const busCard = idle && <m.section variants={item}>
-    <BusCard route={props.busRoute ?? null} when={upcoming ? `Bus · ${upcoming.label} ${upcoming.start}` : null} onAdd={props.onSettings}/>
-  </m.section>;
 
   const header = <m.header variants={item} className={`${styles.top} ${layout === "horizon" ? styles.topTall : ""}`}>
     <div>
@@ -323,7 +320,6 @@ export default function Today(props: {
     {alertCard}
     <m.section variants={item}><Glass blur className={`${styles.heroCard} ${running ? styles.heroLive : ""}`}>{heroInner}</Glass></m.section>
     {actions}
-    {busCard}
     <m.section variants={item}><Glass blur className={styles.card}>{recentInner}</Glass></m.section>
   </div>;
 }
