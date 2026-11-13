@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, Clipboard, Mail } from "lucide-react";
+import { Check, Clipboard, KeyRound, Mail } from "lucide-react";
 import { normalizeGoogleClientId, validGoogleClientId } from "@/lib/google-auth";
+import { clearGoogleSession } from "@/lib/google-session";
+import { disconnectGoogle, googleSecret, rememberGoogleSecret, secretFromPaste, staysSignedIn } from "@/lib/google-offline";
 
 type Props = {
   clientId: string;
@@ -26,7 +28,32 @@ export default function GoogleSetup({ clientId, onChange, onSave, connectedEmail
   const normalized = normalizeGoogleClientId(clientId);
   const valid = validGoogleClientId(normalized);
   const invalid = Boolean(clientId.trim()) && !valid;
+  const [secret, setSecret] = useState("");
+  const [hasSecret, setHasSecret] = useState(false);
+  const [linked, setLinked] = useState(false);
+  const [secretNote, setSecretNote] = useState("");
   useEffect(() => { setOrigin(window.location.origin); }, []);
+  useEffect(() => { setHasSecret(valid && Boolean(googleSecret(normalized))); setLinked(valid && staysSignedIn(normalized)); }, [valid, normalized, connectedEmail]);
+
+  /** A pasted Web client JSON also carries the secret; keep it so Connect can stay signed in. */
+  function changeId(value: string) {
+    const fromJson = value.trim().startsWith("{") ? secretFromPaste(value) : "";
+    const id = normalizeGoogleClientId(value);
+    if (fromJson && validGoogleClientId(id)) { rememberGoogleSecret(id, fromJson); setHasSecret(true); setSecretNote("Client secret saved from the JSON. Tap Connect Google once to stay signed in."); }
+    onChange(value);
+  }
+  function saveSecret() {
+    const value = secretFromPaste(secret);
+    if (!valid) { setSecretNote("Save your client ID first."); return; }
+    if (!value) { setSecretNote("That doesn't look like a client secret. Copy it again from Google Cloud."); return; }
+    rememberGoogleSecret(normalized, value); setSecret(""); setHasSecret(true);
+    setSecretNote("Saved. Tap Connect Google once more, and you'll stay signed in.");
+  }
+  async function signOut() {
+    await disconnectGoogle(normalized);
+    for (const service of ["google", "drive", "gmail"] as const) clearGoogleSession(normalized, service);
+    setLinked(false); setSecretNote("Signed out of Google on this phone.");
+  }
 
   async function copyOrigin() {
     try {
@@ -43,8 +70,8 @@ export default function GoogleSetup({ clientId, onChange, onSave, connectedEmail
     </div>
 
     <label className="access-label" htmlFor="google-client-id">Google Web client ID
-      <small>Paste the client ID or downloaded Web client JSON from <a href={clientsUrl} target="_blank" rel="noopener noreferrer">Google Cloud Clients</a>. The client secret is not needed.</small>
-      <input id="google-client-id" type="text" value={clientId} onChange={event => onChange(event.target.value)} placeholder="…apps.googleusercontent.com" autoComplete="off" autoCapitalize="none" spellCheck={false} aria-invalid={invalid || undefined} aria-describedby={clientId.trim() ? "google-id-status" : undefined}/>
+      <small>Paste the client ID or downloaded Web client JSON from <a href={clientsUrl} target="_blank" rel="noopener noreferrer">Google Cloud Clients</a>. Pasting the JSON also saves its client secret, which keeps you signed in.</small>
+      <input id="google-client-id" type="text" value={clientId} onChange={event => changeId(event.target.value)} placeholder="…apps.googleusercontent.com" autoComplete="off" autoCapitalize="none" spellCheck={false} aria-invalid={invalid || undefined} aria-describedby={clientId.trim() ? "google-id-status" : undefined}/>
     </label>
     {clientId.trim() && <p id="google-id-status" className={`id-status ${valid ? "valid" : "invalid"}`}>{valid ? "Client ID format looks right. Save it, then connect." : "Use a Web application client ID ending in .apps.googleusercontent.com, or its downloaded JSON."}</p>}
     <button type="button" className="google-save" disabled={connecting} onClick={onSave}><Check size={16}/> Save Google client ID</button>
@@ -53,6 +80,24 @@ export default function GoogleSetup({ clientId, onChange, onSave, connectedEmail
     {!online && <p className="origin-help">Connect to the internet to sign in to Google. Your timer and typed notes still work offline.</p>}
     {connectedEmail && <p className="connection-result success">Account: {connectedEmail}. Sheets and email permissions are requested when you use those actions.</p>}
     {error && <p className="form-error" role="alert">{error}</p>}
+
+    <div className="google-stay">
+      <div className="setting-title">
+        <span className="setting-icon"><KeyRound size={19}/></span>
+        <div><strong>Stay signed in</strong><p>{linked ? "On. Sending and backups work without a Google window." : "Without this, Google signs you out after an hour and asks again every time you send."}</p></div>
+      </div>
+      {linked ? <button type="button" className="text-action" onClick={() => void signOut()}>Sign out of Google on this phone</button> : hasSecret
+        ? <p className="origin-help">Client secret saved. Tap <strong>{connectedEmail ? "Change Google account" : "Connect Google"}</strong> once to finish.</p>
+        : <>
+          <label className="access-label" htmlFor="google-client-secret">Client secret
+            <small>In <a href={clientsUrl} target="_blank" rel="noopener noreferrer">Google Cloud Clients</a>, open your Web client and tap <strong>Add secret</strong>. Copy it here. It stays on this phone and in a private cookie only RouteHours&apos; server can read.</small>
+            <input id="google-client-secret" type="password" value={secret} onChange={event => setSecret(event.target.value)} placeholder="GOCSPX-…" autoComplete="off" autoCapitalize="none" spellCheck={false}/>
+          </label>
+          <button type="button" className="google-save" disabled={!secret.trim()} onClick={saveSecret}><Check size={16}/> Save client secret</button>
+        </>}
+      {secretNote && <p className="origin-help" role="status">{secretNote}</p>}
+      <p className="origin-help">If Google still signs you out after a week, open <a href={audienceUrl} target="_blank" rel="noopener noreferrer">Audience</a> and tap <strong>Publish app</strong>. Apps left in Testing get signed out every 7 days.</p>
+    </div>
 
     <details className="advanced-ai google-origin-help">
       <summary>Fix “Access blocked · origin_mismatch”</summary>

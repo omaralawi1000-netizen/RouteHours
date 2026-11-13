@@ -8,7 +8,7 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test lib/*.test.ts app/api/push/*.test.ts app/api/ai/*.test.ts",
+    "test": "node --experimental-strip-types --test lib/*.test.ts app/api/push/*.test.ts app/api/ai/*.test.ts app/api/google/*.test.ts",
     "test:e2e": "playwright test --project=flows",
     "test:visual": "playwright test --project=visual"
   },
