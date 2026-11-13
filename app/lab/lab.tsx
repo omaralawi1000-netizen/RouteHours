@@ -23,6 +23,7 @@ import { setHaptics, tick } from "../ui/haptics";
 import { spring, springSpec, type SpringName } from "../ui/motion";
 import Today, { clockTime, DAY_PARTS, hm, nextPart, usualDayMinutes, type Layout, type Phase, type RecentShift } from "./today";
 import Reminders from "./reminders";
+import { BusRouteSettings, useBusRoute } from "./bus-route";
 import { item, screen } from "./stagger";
 import styles from "./lab.module.css";
 
@@ -135,6 +136,7 @@ export default function Lab() {
   const [breaks, setBreaks] = useState<Break[]>([]);
   const [note, setNote] = useState<string | undefined>();
   const [stillDriving, setStillDriving] = useState(false);
+  const bus = useBusRoute();
   function start(withNote?: string) { tick(); setSaved(null); setBreaks([]); setNote(withNote); setStillDriving(false); setStartedAt(Date.now()); setPhase("running"); }
   function startUsual() {
     const part = nextPart();
@@ -236,7 +238,7 @@ export default function Lab() {
           {mounted && <m.main key={tab} className={styles.page} custom={direction} variants={screen} initial={opened ? "enter" : "hidden"} animate="show" exit="leave">
             {tab === "today" && <Today phase={phase} startedAt={startedAt} endedAt={endedAt} weekMinutes={weekMinutes} todayMinutes={todayMinutes} chipPulse={chipPulse} dateLabel={dateLabel}
               recent={recent} mic={mic} level={level} micSeconds={micSeconds}
-              layout={layout} note={note} breaks={breaks} weekDays={weekDays} onBreak={toggleBreak} onStartUsual={startUsual} onLogUsualDay={logUsualDay} dayOff={mark !== "worked"} stillDriving={stillDriving} onStillDriving={keepDriving} onAutoFinish={autoFinish}
+              layout={layout} note={note} breaks={breaks} weekDays={weekDays} onBreak={toggleBreak} onStartUsual={startUsual} onLogUsualDay={logUsualDay} dayOff={mark !== "worked"} stillDriving={stillDriving} onStillDriving={keepDriving} onAutoFinish={autoFinish} busRoute={bus.route}
               onUndo={undoFinish} onStart={() => start()} onFinish={() => finish()} onFastForward={() => { setStartedAt(value => value - 3_600_000); setBreaks(list => list.map(b => ({ start: b.start - 3_600_000, end: b.end && b.end - 3_600_000 }))); }} onMic={toggleMic}
               onAddPast={() => setEditing({ id: -1, day: "New", start: "06:00", end: "14:00", minutes: 480 })} onOpenShift={setEditing} onSettings={() => changeTab("lab")}/>}
 
@@ -273,6 +275,7 @@ export default function Lab() {
                 <div><p className={styles.eyebrow}>Headlight lab</p><h1 className={`${styles.title} serif`}>Tune the look</h1></div>
               </m.header>
               <m.section variants={item}><Reminders say={say}/></m.section>
+              <m.section variants={item}><BusRouteSettings route={bus.route} onSave={bus.save} say={say}/></m.section>
               <m.section variants={item}>
                 <Glass blur className={styles.card}>
                   <div className={styles.cardHead}><h2 className={`${styles.cardTitle} serif`}>Layout and font</h2></div>

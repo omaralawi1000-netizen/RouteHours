@@ -49,7 +49,11 @@
   --glass: rgba(255, 255, 255, 0.075);
   --glass-strong: rgba(24, 20, 36, 0.58);
   --glass-edge: rgba(255, 255, 255, 0.18);
-  --glass-shadow: 0 24px 50px -24px rgba(4, 2, 12, 0.75);
+  /* Depth, lit from above: a tight contact shadow, a soft mid shadow and a wide ambient one. */
+  --glass-shadow: 0 1px 2px rgba(4, 2, 12, 0.22), 0 10px 24px -10px rgba(4, 2, 12, 0.5), 0 34px 70px -26px rgba(4, 2, 12, 0.85);
+  --glass-depth: inset 0 -22px 34px -28px rgba(0, 0, 0, 0.45);
+  --lift-shadow: 0 1px 1px rgba(4, 2, 12, 0.22), 0 8px 18px -8px rgba(4, 2, 12, 0.65);
+  --inset-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3), inset 0 -1px 0 rgba(255, 255, 255, 0.05);
   --press: rgba(255, 255, 255, 0.08);
   --accent: #FFB547;
   --accent-press: #F0A532;
@@ -74,7 +78,10 @@
   --glass: rgba(255, 255, 255, 0.42);
   --glass-strong: rgba(255, 255, 255, 0.7);
   --glass-edge: rgba(255, 255, 255, 0.9);
-  --glass-shadow: 0 24px 50px -26px rgba(60, 40, 90, 0.4);
+  --glass-shadow: 0 1px 2px rgba(70, 40, 100, 0.08), 0 12px 26px -12px rgba(70, 40, 100, 0.22), 0 34px 70px -30px rgba(70, 40, 100, 0.42);
+  --glass-depth: inset 0 -22px 34px -28px rgba(70, 40, 100, 0.12);
+  --lift-shadow: 0 1px 1px rgba(70, 40, 100, 0.08), 0 8px 18px -8px rgba(70, 40, 100, 0.32);
+  --inset-shadow: inset 0 1px 3px rgba(70, 40, 100, 0.14), inset 0 -1px 0 rgba(255, 255, 255, 0.6);
   --press: rgba(21, 23, 28, 0.05);
   --accent: #E8920F;
   --accent-press: #D9860A;

@@ -7,6 +7,6 @@
   touch-action: pan-y; cursor: grab; font-size: 15px;
 }
 :global([data-blur="off"]) .toast { -webkit-backdrop-filter: none; backdrop-filter: none; }
-.text { display: inline-block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 12px 0; }
+.text { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; padding: 12px 0; line-height: 1.3; }
 .toast:not(:has(.action)) { padding-right: 20px; }
 .action { min-height: 40px; padding: 0 14px; border: 0; border-radius: 999px; background: var(--press); color: var(--text); font-weight: 600; cursor: pointer; white-space: nowrap; }

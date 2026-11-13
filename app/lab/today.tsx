@@ -9,6 +9,8 @@ import Glass from "../ui/glass";
 import MicPill, { type MicState } from "../ui/mic-pill";
 import RollingNumber from "../ui/rolling-number";
 import RouteLine from "../ui/route-line";
+import { BusCard } from "./bus-route";
+import type { MapsRoute } from "../api/maps/parse";
 import { type Break } from "../ui/shift-line";
 import WeekBars, { type DayBar } from "../ui/week-bars";
 import { fade, spring } from "../ui/motion";
@@ -54,7 +56,7 @@ export type Alert = { id: string; text: string; action?: { label: string; onClic
 export default function Today(props: {
   phase: Phase; startedAt: number; endedAt: number; weekMinutes: number; todayMinutes: number; chipPulse: number; dateLabel: string;
   note?: string; layout: Layout; recent: RecentShift[]; mic: MicState; level: number; micSeconds: number; breaks: Break[]; weekDays: DayBar[];
-  dayOff?: boolean; onLogUsualDay: () => void; stillDriving?: boolean; onStillDriving: () => void; onAutoFinish: (at: number) => void;
+  dayOff?: boolean; onLogUsualDay: () => void; stillDriving?: boolean; onStillDriving: () => void; onAutoFinish: (at: number) => void; busRoute?: MapsRoute | null;
   onBreak: () => void; onStartUsual: () => void; onUndo: () => void; onStart: () => void; onFinish: () => void; onFastForward: () => void; onMic: () => void; onAddPast: () => void; onOpenShift: (shift: RecentShift) => void; onSettings: () => void;
 }) {
   const { phase, startedAt, endedAt, weekMinutes, todayMinutes, chipPulse, dateLabel, recent } = props;
@@ -168,6 +170,11 @@ export default function Today(props: {
       {!alert.alt && <button type="button" className={styles.alertClose} aria-label="Dismiss" onClick={() => setDismissed(list => [...list, alert.id])}><X aria-hidden="true"/></button>}
     </m.section>}
   </AnimatePresence>;
+
+  // Off shift only: while driving, the route is the job, not the trip to it.
+  const busCard = idle && <m.section variants={item}>
+    <BusCard route={props.busRoute ?? null} when={upcoming ? `Bus · ${upcoming.label} ${upcoming.start}` : null} onAdd={props.onSettings}/>
+  </m.section>;
 
   const header = <m.header variants={item} className={`${styles.top} ${layout === "horizon" ? styles.topTall : ""}`}>
     <div>
@@ -316,6 +323,7 @@ export default function Today(props: {
     {alertCard}
     <m.section variants={item}><Glass blur className={`${styles.heroCard} ${running ? styles.heroLive : ""}`}>{heroInner}</Glass></m.section>
     {actions}
+    {busCard}
     <m.section variants={item}><Glass blur className={styles.card}>{recentInner}</Glass></m.section>
   </div>;
 }

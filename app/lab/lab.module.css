@@ -1,4 +1,6 @@
 .lab { min-height: 100dvh; position: relative; isolation: isolate; }
+/* A soft fade under the tab bar, so scrolled cards sink into it instead of colliding with it. */
+.lab::after { content: ""; position: fixed; left: 0; right: 0; bottom: 0; z-index: 25; height: calc(132px + env(safe-area-inset-bottom)); pointer-events: none; background: linear-gradient(to top, color-mix(in srgb, var(--bg) 82%, transparent), color-mix(in srgb, var(--bg) 46%, transparent) 48%, transparent); }
 /* Both pages share one grid cell while they swap, so the strip never jumps or leaves a gap. */
 .pages { display: grid; overflow-x: clip; }
 .pages > .page { grid-area: 1 / 1; width: 100%; }
@@ -9,7 +11,7 @@
 .top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 4px 4px 0; }
 .eyebrow { font-size: 12px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-2); }
 .title { position: relative; font-size: calc(40px * var(--title-scale, 1)); line-height: 1.05; margin-top: 4px; text-shadow: 0 2px 30px rgb(0 0 0 / 0.15); }
-.roundButton { flex: none; width: 48px; height: 48px; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 50%; cursor: pointer; color: var(--text); background: var(--glass); -webkit-backdrop-filter: blur(26px) saturate(1.35); backdrop-filter: blur(26px) saturate(1.35); box-shadow: inset 0 var(--hairline) 0 var(--glass-edge), 0 0 0 var(--hairline) var(--line); }
+.roundButton { flex: none; width: 48px; height: 48px; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 50%; cursor: pointer; color: var(--text); background: var(--glass); -webkit-backdrop-filter: blur(26px) saturate(1.35); backdrop-filter: blur(26px) saturate(1.35); box-shadow: inset 0 var(--hairline) 0 var(--glass-edge), 0 0 0 var(--hairline) var(--line), var(--lift-shadow); }
 .roundButton svg { width: 20px; height: 20px; }
 :global([data-blur="off"]) .roundButton { -webkit-backdrop-filter: none; backdrop-filter: none; background: var(--glass-strong); }
 
@@ -92,7 +94,7 @@
 .visualItem > :global(*) { width: 100%; }
 .visualItem > .breakChip { width: auto; align-self: flex-start; }
 .paused { opacity: 0.55; }
-.breakChip { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 14px; border-radius: 999px; font-size: 13px; font-weight: 500; color: var(--text); background: var(--glass); box-shadow: inset 0 var(--hairline) 0 var(--glass-edge), 0 0 0 var(--hairline) var(--line); -webkit-backdrop-filter: blur(26px) saturate(1.35); backdrop-filter: blur(26px) saturate(1.35); }
+.breakChip { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 14px; border-radius: 999px; font-size: 13px; font-weight: 500; color: var(--text); background: var(--glass); box-shadow: inset 0 var(--hairline) 0 var(--glass-edge), 0 0 0 var(--hairline) var(--line), var(--lift-shadow); -webkit-backdrop-filter: blur(26px) saturate(1.35); backdrop-filter: blur(26px) saturate(1.35); }
 .breakChip svg { width: 16px; height: 16px; flex: none; }
 .breakDue { background: var(--accent); color: var(--on-accent); box-shadow: 0 0 22px rgb(var(--glow-run) / 0.6); }
 :global([data-blur="off"]) .breakChip { -webkit-backdrop-filter: none; backdrop-filter: none; background: var(--glass-strong); }
@@ -136,7 +138,7 @@
 
 /* Horizon on shift: two glanceable numbers under the line */
 .liveStats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.liveStat { display: flex; flex-direction: column; gap: 2px; padding: 10px 14px; border-radius: 18px; background: var(--press); box-shadow: inset 0 0 0 var(--hairline) var(--line); transition: background 0.5s ease, color 0.5s ease; }
+.liveStat { display: flex; flex-direction: column; gap: 2px; padding: 10px 14px; border-radius: 18px; background: var(--press); box-shadow: inset 0 0 0 var(--hairline) var(--line), var(--inset-shadow); transition: background 0.5s ease, color 0.5s ease; }
 .liveHot { background: color-mix(in srgb, var(--accent) 16%, var(--press)); box-shadow: inset 0 0 0 var(--hairline) color-mix(in srgb, var(--accent) 45%, transparent); }
 .liveHot .liveLabel svg { color: var(--accent); }
 .liveLabel { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-2); }
@@ -158,7 +160,7 @@
 .stripTitle { font-size: calc(24px * var(--title-scale, 1)); }
 .strip { display: flex; gap: 10px; overflow-x: auto; padding: 2px 16px 6px; scroll-snap-type: x mandatory; scroll-padding: 16px; scrollbar-width: none; overscroll-behavior-x: contain; overflow-anchor: none; }
 .strip::-webkit-scrollbar { display: none; }
-.shiftChip { flex: 0 0 128px; scroll-snap-align: start; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 12px 14px; border: 0; border-radius: 20px; text-align: left; cursor: pointer; color: var(--text); background: var(--glass); box-shadow: inset 0 var(--hairline) 0 var(--glass-edge), 0 0 0 var(--hairline) var(--line); -webkit-backdrop-filter: blur(26px) saturate(1.35); backdrop-filter: blur(26px) saturate(1.35); }
+.shiftChip { flex: 0 0 128px; scroll-snap-align: start; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 12px 14px; border: 0; border-radius: 20px; text-align: left; cursor: pointer; color: var(--text); background: var(--glass); box-shadow: inset 0 var(--hairline) 0 var(--glass-edge), 0 0 0 var(--hairline) var(--line), var(--lift-shadow); -webkit-backdrop-filter: blur(26px) saturate(1.35); backdrop-filter: blur(26px) saturate(1.35); }
 :global([data-blur="off"]) .shiftChip { -webkit-backdrop-filter: none; backdrop-filter: none; background: var(--glass-strong); }
 .chipDay { font-size: 13px; font-weight: 600; color: var(--text-2); }
 .chipValue { font-size: 26px; font-weight: 300; letter-spacing: -0.02em; line-height: 1.15; }
@@ -191,3 +193,20 @@
 .reminderList li { display: grid; grid-template-columns: 52px 1fr auto; align-items: center; gap: 10px; padding: 10px 2px; font-size: 14px; border-top: var(--hairline) solid var(--line); }
 .reminderList li > span:first-child { font-weight: 600; }
 .reminderTag { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-2); padding: 3px 8px; border-radius: 999px; background: var(--press); }
+
+/* Bus route: one tap from Today to the next departure in Google Maps. */
+.busLink { display: block; color: inherit; text-decoration: none; border-radius: var(--radius-card); -webkit-tap-highlight-color: transparent; }
+.busCard { display: flex; align-items: center; gap: 12px; padding: 12px 12px 12px 14px; border-radius: 24px; }
+.busIcon { flex: none; width: 40px; height: 40px; display: grid; place-items: center; border-radius: 14px; color: var(--on-accent); background: linear-gradient(160deg, #FFE3A8, var(--accent)); box-shadow: var(--lift-shadow), inset 0 1px 0 rgb(255 255 255 / 0.55); }
+.busIcon svg { width: 20px; height: 20px; }
+.busText { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.busTitle { font-size: 16px; font-weight: 600; }
+.busRoute { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 16px; font-weight: 600; }
+.busRoute > span:not(.busLine) { flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.busLine { flex: 0 1 40px; min-width: 16px; height: 6px; background: radial-gradient(circle, var(--accent) 1.6px, transparent 2px) 0 50% / 8px 6px repeat-x; opacity: 0.85; }
+.busGo { flex: none; width: 40px; height: 40px; display: grid; place-items: center; border-radius: 50%; color: var(--accent); background: var(--press); box-shadow: inset 0 0 0 var(--hairline) var(--line); }
+.busGo svg { width: 20px; height: 20px; }
+.busAdd { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px; border: 0; border-radius: 22px; text-align: left; cursor: pointer; color: var(--text); background: none; box-shadow: inset 0 0 0 var(--hairline) var(--line); }
+.busAdd .busIcon { color: var(--accent); background: var(--press); box-shadow: none; }
+.busSaved { display: flex; align-items: center; gap: 12px; padding: 10px 6px 10px 10px; border-radius: 20px; background: var(--press); box-shadow: var(--inset-shadow); }
+.linkInput { font-size: 16px !important; font-weight: 400 !important; font-variant-numeric: normal !important; }
