@@ -54,10 +54,14 @@ async function call(body: Record<string, unknown>, signal?: AbortSignal) {
 }
 
 /** A fresh hour of access with no Google window, or null when this phone isn't signed in that way. */
+/** Bumped by every sign-in and sign-out, so a refresh that started before one is thrown away. */
+let generation = 0;
 export async function refreshGoogle(clientId: string, service: GoogleService, signal?: AbortSignal): Promise<OfflineAccount | null> {
   if (!staysSignedIn(clientId)) return null;
+  const started = generation;
   try {
     const { status, data } = await call({ action: 'token', clientId }, signal);
+    if (started !== generation) return null;
     if (status === 401) { markLinked(clientId, ''); return null; }
     const fresh = account(data);
     return fresh && grantedServices(fresh.scope).includes(service) ? fresh : null;
@@ -69,6 +73,7 @@ export function connectGoogle(clientId: string, secret: string, options: { login
   return new Promise((resolve, reject) => {
     const init = typeof window === 'undefined' ? undefined : (window as GoogleBrowser).google?.accounts?.oauth2?.initCodeClient;
     if (options.signal?.aborted) { reject(new Error('Google connection cancelled.')); return; }
+    generation++;
     if (!init) { reject(new Error('Google sign-in has not loaded. Check your connection, then reload RouteHours and try again.')); return; }
     let done = false;
     const finish = (error?: Error, value?: OfflineAccount) => { if (done) return; done = true; if (error) reject(error); else resolve(value!); };
@@ -80,6 +85,7 @@ export function connectGoogle(clientId: string, secret: string, options: { login
         callback: async response => {
           if (response.error || !response.code) { finish(new Error(response.error === 'access_denied' ? 'Google access was not granted. Connect again and approve the permissions.' : 'Google could not finish signing in. Try again.')); return; }
           try {
+            generation++;
             const { data } = await call({ action: 'connect', clientId, secret, code: response.code }, options.signal);
             const fresh = account(data);
             if (!fresh) { finish(new Error(typeof data.error === 'string' ? data.error : 'Google could not finish signing in. Try again.')); return; }
@@ -94,6 +100,7 @@ export function connectGoogle(clientId: string, secret: string, options: { login
 }
 
 export async function disconnectGoogle(clientId: string) {
+  generation++;
   markLinked(clientId, '');
   try { await call({ action: 'disconnect' }); } catch { /* The cookie expires on its own if this fails. */ }
 }

@@ -60,3 +60,17 @@ test('a cancelled screen never opens the Google window', async () => {
     assert.equal(opened, 0);
   } finally { env.restore(); }
 });
+
+test('a refresh that was in flight during a sign-out or account change is thrown away', async () => {
+  const answers: ((value: Response) => void)[] = [];
+  const env = setup((() => new Promise<Response>(resolve => { answers.push(resolve); })) as typeof fetch);
+  try {
+    env.local.set('routehours:google-stay:' + id, 'old@example.com');
+    const { disconnectGoogle } = await import('./google-offline.ts');
+    const pending = refreshGoogle(id, 'gmail');
+    const signOut = disconnectGoogle(id); // the user changes account while the old refresh is on its way
+    answers[0](new Response(JSON.stringify({ token: 'old', expires: Date.now() + 3000_000, email: 'old@example.com', scope: 'email https://www.googleapis.com/auth/gmail.send' })));
+    assert.equal(await pending, null);
+    answers[1](new Response('{}')); await signOut;
+  } finally { env.restore(); }
+});
