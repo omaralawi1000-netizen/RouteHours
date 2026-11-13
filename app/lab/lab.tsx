@@ -189,10 +189,20 @@ export default function Lab() {
     setEndedAt(end); setPhase("landing");
     later(420, () => { setWeekMinutes(total => total + minutes); setTodayMinutes(total => total + minutes); setChipPulse(p => p + 1); });
     const record = { minutes, startedAt, id, breaks };
+    // The hours actually worked, split at each break, so the timesheet shows them like the real export does.
+    const pieces: { start: string; end: string }[] = [];
+    let from = startedAt;
+    for (const b of [...breaks].sort((x, y) => x.start - y.start)) {
+      const bStart = Math.max(b.start, startedAt), bEnd = Math.min(b.end ?? end, end);
+      if (bEnd - bStart < 60_000) continue;
+      if (bStart - from >= 60_000) pieces.push({ start: clockTime(from), end: clockTime(bStart) });
+      from = Math.max(from, bEnd);
+    }
+    if (end - from >= 60_000 || !pieces.length) pieces.push({ start: clockTime(from), end: clockTime(end) });
     later(1100, () => {
       setPhase("idle"); setSaved(record);
       say(message ?? `Shift saved · ${hm(minutes)} added`, { label: "Undo", onClick: () => undoShift(record) });
-      setRecent(list => [{ id, day: "Today", start: clockTime(startedAt), end: clockTime(end), minutes, note: [note, spoken].filter(Boolean).join(" · ") || undefined }, ...list]);
+      setRecent(list => [{ id, day: "Today", start: clockTime(startedAt), end: clockTime(end), minutes, pieces, note: [note, spoken].filter(Boolean).join(" · ") || undefined }, ...list]);
     });
     later(8000, () => setSaved(current => current?.id === id ? null : current));
   }

@@ -17,7 +17,7 @@ import styles from "./lab.module.css";
 
 export type Layout = "focus" | "card" | "bento" | "horizon";
 export type Phase = "idle" | "running" | "landing";
-export type RecentShift = { id: number; day: string; start: string; end: string; minutes: number; note?: string };
+export type RecentShift = { id: number; day: string; start: string; end: string; minutes: number; note?: string; pieces?: { start: string; end: string }[] };
 
 export function hm(minutes: number) { return `${Math.floor(minutes / 60)}:${String(Math.floor(minutes % 60)).padStart(2, "0")}`; }
 export function hms(ms: number) { const s = Math.max(0, Math.floor(ms / 1000)); return `${Math.floor(s / 3600)}:${String(Math.floor(s / 60) % 60).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`; }

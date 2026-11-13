@@ -46,7 +46,8 @@ function seed(recent: RecentShift[], todayIndex: number): SheetDay[] {
     const pieces: Piece[] = [], notes: string[] = [];
     for (const entry of [...entries].reverse()) {
       const split = entry.note?.match(SPLIT);
-      if (split) pieces.push({ start: split[1], end: split[2] }, { start: split[3], end: split[4] });
+      if (entry.pieces?.length) { pieces.push(...entry.pieces); if (entry.note) notes.push(entry.note); }
+      else if (split) pieces.push({ start: split[1], end: split[2] }, { start: split[3], end: split[4] });
       else { pieces.push({ start: entry.start.slice(-5), end: entry.end.slice(-5) }); if (entry.note) notes.push(entry.note); }
     }
     return { date: dateOf(index), pieces, note: notes.join(" · ") };

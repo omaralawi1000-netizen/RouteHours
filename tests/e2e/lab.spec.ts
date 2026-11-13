@@ -79,6 +79,25 @@ test.describe("lab: the usual split day", () => {
     await expect(page.getByRole("button", { name: "Edit Today's shift" }).first()).toContainText("1:25");
   });
 
+  test("a break splits the shift on the timesheet, and its total matches the logged hours", async ({ page }) => {
+    await page.clock.setFixedTime(new Date("2026-11-13T05:45:00Z")); // Friday 06:45
+    await page.goto("/lab");
+    await page.getByRole("button", { name: "Start your morning shift" }).click();
+    await page.clock.setFixedTime(new Date("2026-11-13T06:00:00Z")); // 07:00
+    await page.getByRole("button", { name: "Break", exact: true }).click();
+    await page.clock.setFixedTime(new Date("2026-11-13T06:30:00Z")); // 07:30
+    await page.getByRole("button", { name: "Resume" }).click();
+    await page.clock.setFixedTime(new Date("2026-11-13T07:00:00Z")); // 08:00
+    await page.getByRole("button", { name: "Finish shift" }).click();
+    await expect(page.getByRole("button", { name: "Edit Today's shift" }).first()).toContainText("0:45");
+    await page.getByRole("button", { name: "Week", exact: true }).click();
+    await page.getByRole("button", { name: "Review & send" }).click();
+    const friday = page.getByRole("dialog", { name: "Review & send" }).getByRole("button", { name: /^Fri/ });
+    await expect(friday).toContainText("06:45–07:00");
+    await expect(friday).toContainText("07:30–08:00");
+    await expect(friday).toContainText("0:45");
+  });
+
   test("tapping Still driving keeps the run going past the usual end", async ({ page }) => {
     await page.clock.setFixedTime(new Date("2026-11-13T05:45:00Z"));
     await page.goto("/lab");
