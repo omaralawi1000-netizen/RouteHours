@@ -124,3 +124,30 @@ test.describe("lab: the usual split day", () => {
     await expect(page.getByRole("button", { name: "Start shift" })).toBeVisible();
   });
 });
+
+test("lab: review & send shows the real sheet, edits a day in place and downloads the Excel", async ({ page }) => {
+  await page.goto("/lab");
+  await page.getByRole("button", { name: "Week", exact: true }).click();
+  await page.getByRole("button", { name: "Review & send" }).click();
+  const sheet = page.getByRole("dialog", { name: "Review & send" });
+  await expect(sheet.getByText("15:07 worked", { exact: false })).toBeVisible();
+  // Tuesday ends an hour later: the day, the total and the sheet all follow.
+  await sheet.getByRole("button", { name: /^Tue/ }).click();
+  await sheet.getByLabel("End", { exact: true }).fill("14:34");
+  await expect(sheet.getByRole("button", { name: /^Tue/ })).toContainText("8:22");
+  await expect(sheet.getByText("16:07 worked", { exact: false })).toBeVisible();
+  // Mark Wednesday sick: it shows on the day (and as an x in the Syg column of the sheet).
+  await sheet.getByRole("button", { name: /^Wed/ }).click();
+  await sheet.getByRole("radiogroup", { name: "Wednesday was" }).getByRole("radio", { name: "Sick" }).click();
+  await expect(sheet.getByRole("button", { name: /^Wed/ })).toContainText("Sick");
+  const download = page.waitForEvent("download");
+  await sheet.getByRole("button", { name: "Download Excel" }).click();
+  expect((await download).suggestedFilename()).toBe("RouteHours-uge-46.xlsx");
+  // Sending needs a recipient; in the lab it is only a demo.
+  await expect(sheet.getByRole("button", { name: /Add who it goes to/ })).toBeDisabled();
+  await sheet.getByRole("textbox", { name: "To", exact: true }).fill("boss@example.com");
+  const send = sheet.getByRole("button", { name: /Hold to send/ });
+  await send.hover(); await page.mouse.down(); await page.waitForTimeout(1200); await page.mouse.up();
+  await expect(page.getByText("Demo: nothing was sent.", { exact: false })).toBeVisible();
+  await expect(page.getByRole("button", { name: "See what was sent" })).toBeVisible();
+});

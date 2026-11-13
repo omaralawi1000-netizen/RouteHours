@@ -3,10 +3,9 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import { AnimatePresence, LazyMotion, domMax, MotionConfig, m } from "motion/react";
-import { Check, CalendarDays, FlaskConical, Send, Sun, Trash2 } from "lucide-react";
+import { Check, CalendarDays, FileSpreadsheet, FlaskConical, Sun, Trash2 } from "lucide-react";
 import Button from "../ui/button";
 import Glass from "../ui/glass";
-import HoldButton from "../ui/hold-button";
 import SegmentedControl from "../ui/segmented-control";
 import Sheet from "../ui/sheet";
 import StatusPill, { type WeekStatus } from "../ui/status-pill";
@@ -23,6 +22,7 @@ import { spring, springSpec, type SpringName } from "../ui/motion";
 import Today, { clockTime, DAY_PARTS, hm, nextPart, RATE, usualDayMinutes, type Layout, type Phase, type RecentShift } from "./today";
 import Reminders, { useTravel } from "./reminders";
 import { AskCard, GeminiCard, PayslipCard, useGeminiKey, useVoice, type Logged } from "./ai";
+import ReviewSheet, { useTimesheet } from "./review";
 import { item, screen } from "./stagger";
 import styles from "./lab.module.css";
 
@@ -230,6 +230,8 @@ export default function Lab() {
     tick(); setMark(next);
     say(next === "syg" ? "Today marked sick" : next === "fri" ? "Today marked as day off" : "Mark removed");
   }
+  const timesheet = useTimesheet(recent, todayIndex, mark === "worked" ? "" : mark);
+  const [reviewing, setReviewing] = useState(false);
   const weeks = WEEKS.map((week, index) => index === WEEKS.length - 1 ? { ...week, days: week.days.map((d, i) => ({ ...d, minutes: i === todayIndex ? d.minutes + todayMinutes : d.minutes, today: i === todayIndex })) } : week);
   const weekDays: DayBar[] = weeks[WEEKS.length - 1].days.map((d, i) => ({ short: d.short, minutes: d.minutes, today: i === todayIndex, mark: i === todayIndex && mark !== "worked" ? (mark === "syg" ? "Syg" : "Fri") : undefined }));
   const [editing, setEditing] = useState<RecentShift | null>(null);
@@ -300,14 +302,11 @@ export default function Lab() {
                 <Glass blur className={styles.card}>
                   <div className={styles.cardHead}><h2 className={`${styles.cardTitle} serif`}>Timesheet</h2><StatusPill status={status} pulse={statusPulse}/></div>
                   <div className={styles.sendTotals}>
-                    <div><p className={styles.statLabel}>Worked</p><p className={`${styles.sendBig} numeric`}>{hm(weekMinutes)}</p></div>
-                    <div><p className={styles.statLabel}>Shifts</p><p className={`${styles.sendBig} numeric`}>{recent.filter(r => r.day !== "Last week").length}</p></div>
+                    <div><p className={styles.statLabel}>Worked</p><p className={`${styles.sendBig} numeric`}>{hm(timesheet.total)}</p></div>
+                    <div><p className={styles.statLabel}>Days</p><p className={`${styles.sendBig} numeric`}>{timesheet.shifts}</p></div>
                   </div>
-                  <HoldButton icon={<Send/>} disabled={status === "sent"} onConfirm={() => { setStatus("sent"); setStatusPulse(p => p + 1); say("Timesheet sent"); }}>{status === "sent" ? "Sent" : "Hold to send timesheet"}</HoldButton>
-                  <div className={styles.inline}>
-                    <Button variant="quiet" size="small" onClick={() => { setStatus("changed"); setStatusPulse(0); }} disabled={status !== "sent"}>Edit a sent shift</Button>
-                    <Button variant="quiet" size="small" onClick={() => { setStatus("reviewed"); setStatusPulse(0); }}>Reset</Button>
-                  </div>
+                  <Button variant="primary" icon={<FileSpreadsheet/>} onClick={() => { tick(); setReviewing(true); }}>{status === "sent" ? "See what was sent" : "Review & send"}</Button>
+                  <p className={styles.hint}>See the Excel sheet and the email before it goes. Fix any day right there.</p>
                 </Glass>
               </m.section>
               <m.section variants={item}><AskCard apiKey={geminiKey} context={hoursContext} say={say} onNeedKey={needKey}/></m.section>
@@ -392,6 +391,8 @@ export default function Lab() {
             <label className={`${styles.field} ${styles.wide}`}><span>Note</span><textarea rows={3} defaultValue={sheetShift?.note ?? ""} placeholder="Route, bus, anything worth remembering"/></label>
           </div>
         </Sheet>
+        <ReviewSheet open={reviewing} onClose={() => setReviewing(false)} sheet={timesheet} sent={status === "sent"} say={say}
+          onSent={() => { setStatus("sent"); setStatusPulse(p => p + 1); }} onEdited={() => { if (status === "sent") { setStatus("changed"); setStatusPulse(0); } }}/>
         <Toast message={toast} onDismiss={() => setToast(null)}/>
       </div>
     </MotionConfig>
