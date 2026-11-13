@@ -1,4 +1,5 @@
-import { get, put } from "@vercel/blob";
+import { createHash } from "node:crypto";
+import { BlobNotFoundError, BlobPreconditionFailedError, del, get, list, put } from "@vercel/blob";
 import * as webpush from "web-push";
 import type { Device, ReminderAction } from "./schedule";
 
@@ -6,12 +7,10 @@ export * from "./schedule";
 
 /**
  * Shift reminders: the phones that asked for them, and what to send when.
- * Kept in one private Vercel Blob file. Only the push address and the reminder times are stored,
- * never shifts or hours (those stay on the phone).
+ * Each phone is its own private Vercel Blob file, so two phones (or a phone and the timer) never
+ * overwrite each other. Only the push address and the reminder times are stored, never shifts or hours.
  */
-type State = { devices: Device[] };
-
-const FILE = "push/devices.json";
+const DIR = "push/devices/";
 const MAX_DEVICES = 5;
 
 export function configured() {
@@ -25,21 +24,49 @@ function vapid() {
   vapidReady = true;
 }
 
-export async function readState(): Promise<State> {
+const fileFor = (endpoint: string) => `${DIR}${createHash("sha256").update(endpoint).digest("hex").slice(0, 32)}.json`;
+
+export type Stored = { device: Device; pathname: string; etag: string };
+
+async function read(pathname: string): Promise<Stored | null> {
   try {
-    const result = await get(FILE, { access: "private", useCache: false });
-    if (!result || result.statusCode !== 200 || !result.stream) return { devices: [] };
-    const parsed = JSON.parse(await new Response(result.stream).text()) as State;
-    return Array.isArray(parsed?.devices) ? parsed : { devices: [] };
+    const result = await get(pathname, { access: "private", useCache: false });
+    if (!result || result.statusCode !== 200 || !result.stream) return null;
+    const device = JSON.parse(await new Response(result.stream).text()) as Device;
+    return device?.endpoint ? { device, pathname, etag: result.blob.etag } : null;
   } catch (error) {
-    if (error instanceof Error && /not.?found/i.test(error.name + error.message)) return { devices: [] };
+    if (error instanceof BlobNotFoundError) return null;
     throw error;
   }
 }
 
-export async function writeState(state: State) {
-  state.devices = state.devices.slice(-MAX_DEVICES);
-  await put(FILE, JSON.stringify(state), { access: "private", allowOverwrite: true, addRandomSuffix: false, contentType: "application/json", cacheControlMaxAge: 60 });
+/** Every stored phone, oldest first. */
+export async function readDevices(): Promise<Stored[]> {
+  const { blobs } = await list({ prefix: DIR, limit: 50 });
+  const found = await Promise.all(blobs.sort((a, b) => +a.uploadedAt - +b.uploadedAt).map(blob => read(blob.pathname)));
+  return found.filter((x): x is Stored => !!x);
+}
+
+export async function readDevice(endpoint: string) { return read(fileFor(endpoint)); }
+
+/** Saves one phone. With an etag, only if nobody changed it since it was read (returns false if they did). */
+export async function writeDevice(device: Device, etag?: string): Promise<boolean> {
+  try {
+    await put(fileFor(device.endpoint), JSON.stringify(device), { access: "private", allowOverwrite: true, addRandomSuffix: false, contentType: "application/json", cacheControlMaxAge: 60, ...(etag ? { ifMatch: etag } : {}) });
+    return true;
+  } catch (error) {
+    if (error instanceof BlobPreconditionFailedError) return false;
+    throw error;
+  }
+}
+
+export async function removeDevice(endpoint: string) { await del(fileFor(endpoint)); }
+
+/** Keeps at most a handful of phones: the oldest go first. */
+export async function trimDevices() {
+  const all = await readDevices();
+  const extra = all.slice(0, Math.max(0, all.length - MAX_DEVICES));
+  if (extra.length) await del(extra.map(x => x.pathname));
 }
 
 export type Payload = { title: string; body: string; tag: string; action?: ReminderAction };

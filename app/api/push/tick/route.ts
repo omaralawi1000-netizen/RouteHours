@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
-import { configured, copenhagenNow, due, readState, send, writeState } from "../store";
+import { configured, copenhagenNow, due, readDevices, removeDevice, send, writeDevice } from "../store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,15 +23,20 @@ export async function GET(request: NextRequest) {
   const ready = configured();
   if (!ready.push || !ready.store) return NextResponse.json({ error: "Push isn't set up yet.", ...ready }, { status: 503 });
   const now = copenhagenNow();
-  const state = await readState();
-  let sent = 0, changed = false;
-  for (const device of [...state.devices]) {
-    for (const reminder of due(device, now)) {
+  const stored = await readDevices();
+  let sent = 0;
+  for (const { device, etag } of stored) {
+    const reminders = due(device, now);
+    if (!reminders.length) continue;
+    let gone = false, changed = false;
+    for (const reminder of reminders) {
       const result = await send(device, { title: reminder.title, body: reminder.body, tag: reminder.id, action: reminder.action });
-      if (result === "gone") { state.devices = state.devices.filter(d => d !== device); changed = true; break; }
+      if (result === "gone") { gone = true; break; }
       if (result === "ok") { device.sent[reminder.id] = now.date; sent++; changed = true; }
     }
+    if (gone) await removeDevice(device.endpoint);
+    // Only marks what went out; if the phone changed its reminders meanwhile, its new file wins.
+    else if (changed) await writeDevice(device, etag);
   }
-  if (changed) await writeState(state);
-  return NextResponse.json({ ok: true, sent, devices: state.devices.length, at: now }, { headers: { "cache-control": "no-store" } });
+  return NextResponse.json({ ok: true, sent, devices: stored.length, at: now }, { headers: { "cache-control": "no-store" } });
 }
