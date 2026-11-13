@@ -1,0 +1,13 @@
+.mic { display: inline-flex; align-items: center; gap: 12px; height: var(--tap-min); min-width: var(--tap-min); padding: 0 14px; border: 0; cursor: pointer; overflow: hidden; color: var(--text); background: var(--glass); box-shadow: inset 0 var(--hairline) 0 var(--glass-edge), 0 0 0 var(--hairline) var(--line); }
+.mic:disabled { cursor: progress; }
+.open { padding: 0 18px 0 14px; }
+.live { background: var(--accent); color: var(--on-accent); box-shadow: 0 10px 30px -12px rgb(var(--glow-run) / 0.55); }
+.icon { display: inline-flex; flex: none; }
+.icon svg { width: 20px; height: 20px; }
+.live .icon svg { width: 14px; height: 14px; }
+.wave { display: inline-flex; align-items: center; gap: 3px; height: 24px; }
+.bar { display: block; width: 3px; height: 24px; border-radius: 3px; background: currentColor; transform-origin: center; will-change: transform; }
+.time { margin-left: 8px; font-size: 15px; font-weight: 500; min-width: 2.6em; }
+.writing { font-size: 15px; color: var(--text-2); white-space: nowrap; animation: breathe 1.2s ease-in-out infinite; }
+@keyframes breathe { 50% { opacity: 0.45; } }
+@media (prefers-reduced-motion: reduce) { .writing { animation: none; } }

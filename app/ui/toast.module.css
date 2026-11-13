@@ -1,0 +1,11 @@
+.stage { position: fixed; left: 0; right: 0; bottom: calc(24px + env(safe-area-inset-bottom)); z-index: 50; display: flex; justify-content: center; pointer-events: none; padding: 0 16px; }
+.toast {
+  pointer-events: auto; display: inline-flex; align-items: center; gap: 14px; min-height: 48px; max-width: 100%; padding: 0 8px 0 20px; overflow: hidden;
+  background: var(--glass-strong); color: var(--text); -webkit-backdrop-filter: blur(24px) saturate(1.5); backdrop-filter: blur(24px) saturate(1.5);
+  box-shadow: inset 0 var(--hairline) 0 var(--glass-edge), 0 0 0 var(--hairline) var(--line), var(--glass-shadow);
+  touch-action: pan-y; cursor: grab; font-size: 15px;
+}
+:global([data-blur="off"]) .toast { -webkit-backdrop-filter: none; backdrop-filter: none; }
+.text { display: inline-block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 12px 0; }
+.toast:not(:has(.action)) { padding-right: 20px; }
+.action { min-height: 40px; padding: 0 14px; border: 0; border-radius: 999px; background: var(--press); color: var(--text); font-weight: 600; cursor: pointer; white-space: nowrap; }
