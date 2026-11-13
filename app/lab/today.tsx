@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, m } from "motion/react";
 import { Bus, ChevronRight, Coffee, FastForward, Flag, Play, Plus, Settings2, Square, Sun } from "lucide-react";
 import { useNow } from "../features/use-now";
@@ -15,7 +15,7 @@ import { fade, spring } from "../ui/motion";
 import { item } from "./stagger";
 import styles from "./lab.module.css";
 
-export type Layout = "card" | "bento" | "horizon";
+export type Layout = "focus" | "card" | "bento" | "horizon";
 export type Phase = "idle" | "running" | "landing";
 export type RecentShift = { id: number; day: string; start: string; end: string; minutes: number; note?: string };
 
@@ -54,6 +54,10 @@ export default function Today(props: {
   const number = useRef<HTMLDivElement>(null);
   const [blooms, setBlooms] = useState<number[]>([]);
   const shifts = recent.filter(r => r.day !== "Last week").length;
+  // A new shift lands at the front of the strip: slide back to show it.
+  const stripRef = useRef<HTMLDivElement>(null);
+  const firstId = recent[0]?.id;
+  useEffect(() => { stripRef.current?.scrollTo({ left: 0, behavior: "smooth" }); }, [firstId]);
 
   const left = Math.max(0, GOAL_MINUTES - weekMinutes);
   const hour = new Date().getHours();
@@ -81,9 +85,7 @@ export default function Today(props: {
         : <>Usually done around <span className="numeric">{clockTime(expectedEnd)}</span></>}
     </m.p>
   </AnimatePresence>;
-  const breakText = onBreak ? "Break counts toward your 45 min" : dueIn <= 0 ? "45 min break due now" : `45 min break due in ${hm(dueIn)}`;
   const shiftLine = <ShiftLine startedAt={startedAt} now={end} breaks={breaks} usualMinutes={USUAL.minutes} startLabel={clockTime(startedAt)} endLabel={`~${clockTime(expectedEnd)}`}/>;
-  const breakChip = <m.div layout className={`${styles.breakChip} ${dueIn <= 0 && !onBreak ? styles.breakDue : ""}`} transition={spring.snappy}><Coffee aria-hidden="true"/><span className="numeric">{breakText}</span></m.div>;
   const due = !onBreak && dueIn <= 0;
   const liveStats = <div className={styles.liveStats}>
     <m.div layout className={`${styles.liveStat} ${due ? styles.liveHot : ""}`} transition={spring.snappy}>
@@ -99,7 +101,7 @@ export default function Today(props: {
     <AnimatePresence mode="popLayout" initial={false}>
       {idle
         ? <m.div key="bars" className={styles.visualItem} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8, transition: spring.exit }} transition={spring.settle}><WeekBars days={props.weekDays}/></m.div>
-        : <m.div key="line" className={styles.visualItem} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8, transition: spring.exit }} transition={spring.settle}>{shiftLine}{layout === "horizon" ? liveStats : breakChip}</m.div>}
+        : <m.div key="line" className={styles.visualItem} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8, transition: spring.exit }} transition={spring.settle}>{shiftLine}{liveStats}</m.div>}
     </AnimatePresence>
   </div>;
   const heroInner = <>
@@ -119,7 +121,7 @@ export default function Today(props: {
   </m.header>;
 
   const pop = { initial: { opacity: 0, scale: 0.9 }, animate: { opacity: 1, scale: 1 }, exit: { opacity: 0, scale: 0.9, transition: fade }, transition: spring.snappy };
-  const actions = <m.div variants={item} className={styles.actions}>
+  const mainButton = <>
     <div className={`${styles.mainWrap} ${running ? styles.breathing : ""}`}>
       <Button variant="primary" size="main" className={styles.mainButton} onClick={press}
         icon={<AnimatePresence mode="popLayout" initial={false}><m.span key={String(running)} initial={{ scale: 0.5, opacity: 0, rotate: -40 }} animate={{ scale: 1, opacity: 1, rotate: 0 }} exit={{ scale: 0.5, opacity: 0, transition: fade }} transition={spring.settle} style={{ display: "inline-flex" }}>{running ? <Square fill="currentColor"/> : <Play fill="currentColor"/>}</m.span></AnimatePresence>}>
@@ -129,6 +131,8 @@ export default function Today(props: {
       </Button>
       {blooms.map(id => <m.span key={id} className={styles.bloom} initial={{ scale: 0.2, opacity: 0.55 }} animate={{ scale: 2.6, opacity: 0 }} transition={{ duration: 0.75, ease: [0.2, 0, 0, 1] }} onAnimationComplete={() => setBlooms(list => list.filter(b => b !== id))} aria-hidden="true"/>)}
     </div>
+  </>;
+  const quickSlot = <>
     <div className={styles.belowSlot}>
       <AnimatePresence mode="popLayout" initial={false}>
         {saved && idle
@@ -148,7 +152,8 @@ export default function Today(props: {
           </m.div>}
       </AnimatePresence>
     </div>
-  </m.div>;
+  </>;
+  const actions = <m.div variants={item} className={styles.actions}>{mainButton}{quickSlot}</m.div>;
 
   const recentInner = <>
     <div className={styles.cardHead}><h2 className={`${styles.cardTitle} serif`}>Recent shifts</h2><span className={styles.cardMeta}>Tap to edit</span></div>
@@ -164,6 +169,40 @@ export default function Today(props: {
       </AnimatePresence>
     </ul>
   </>;
+
+  if (layout === "focus") return <div className={`${styles.screen} ${styles.focusScreen}`}>
+    {header}
+    <m.section variants={item} className={styles.focusMain}>
+      <Glass blur className={`${styles.heroCard} ${styles.focusHero} ${running ? styles.heroLive : ""}`}>
+        <div className={styles.heroHead}>{eyebrow}<span className={`${styles.payPill} numeric`}>{metaText}</span></div>
+        {bigNumber}{under}
+        <div className={`${styles.heroVisual} ${styles.focusVisual}`}>
+          <AnimatePresence mode="popLayout" initial={false}>
+            {idle
+              ? <m.div key="bars" className={`${styles.visualItem} ${styles.focusBars}`} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8, transition: spring.exit }} transition={spring.settle}><WeekBars tall days={props.weekDays}/></m.div>
+              : <m.div key="line" className={styles.visualItem} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8, transition: spring.exit }} transition={spring.settle}>{shiftLine}{liveStats}</m.div>}
+          </AnimatePresence>
+        </div>
+      </Glass>
+    </m.section>
+    <m.section variants={item} className={styles.recentStrip}>
+      <div className={styles.stripHead}><h2 className={`${styles.stripTitle} serif`}>Recent</h2><span className={styles.cardMeta}>Swipe · tap to edit</span></div>
+      <div ref={stripRef} className={styles.strip}>
+        <AnimatePresence initial={false} mode="popLayout">
+          {recent.slice(0, 6).map(shift => <m.button key={shift.id} layout type="button" className={styles.shiftChip} onClick={() => props.onOpenShift(shift)} aria-label={`Edit ${shift.day}'s shift`}
+            initial={{ opacity: 0, scale: 0.9, x: -20 }} animate={{ opacity: 1, scale: 1, x: 0 }} exit={{ opacity: 0, scale: 0.9, transition: spring.exit }} transition={spring.settle} whileTap={{ scale: 0.96 }}>
+            <span className={styles.chipDay}>{shift.day}</span>
+            <span className={`${styles.chipValue} numeric`}>{hm(shift.minutes)}</span>
+            <span className={`${styles.chipTimes} numeric`}>{shift.start.slice(-5)} – {shift.end}</span>
+          </m.button>)}
+        </AnimatePresence>
+      </div>
+    </m.section>
+    <div className={styles.dock}>
+      <div className={styles.dockSlot}>{quickSlot}</div>
+      {mainButton}
+    </div>
+  </div>;
 
   if (layout === "horizon") return <div className={styles.screen}>
     {header}

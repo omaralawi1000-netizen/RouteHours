@@ -41,11 +41,11 @@ const RECENT: RecentShift[] = [
 
 type DayMark = "worked" | "syg" | "fri";
 const SCENE_KEY = "routehours:lab-wallpaper";
-const LAYOUT_KEY = "routehours:lab-layout";
+const LAYOUT_KEY = "routehours:lab-layout-v3";
 const FONT_KEY = "routehours:lab-font";
 type FontId = "clean" | "soft" | "editorial";
 const FONTS: { value: FontId; label: string }[] = [{ value: "clean", label: "Clean" }, { value: "soft", label: "Soft" }, { value: "editorial", label: "Editorial" }];
-const LAYOUTS: { value: Layout; label: string }[] = [{ value: "horizon", label: "Horizon" }, { value: "card", label: "Card" }, { value: "bento", label: "Tiles" }];
+const LAYOUTS: { value: Layout; label: string }[] = [{ value: "focus", label: "Focus" }, { value: "card", label: "Card" }, { value: "bento", label: "Tiles" }, { value: "horizon", label: "Sheet" }];
 /** Auto wallpaper: dawn sea in the morning, desert by day, dusk hills in the evening, the fjord at night. */
 function sceneForHour(hour: number): SceneId { return hour >= 5 && hour < 10 ? "ocean" : hour >= 10 && hour < 16 ? "desert" : hour >= 16 && hour < 21 ? "dusk" : "fjord"; }
 
@@ -55,7 +55,7 @@ export default function Lab() {
   useEffect(() => { const update = () => setHourNow(new Date().getHours()); update(); const timer = window.setInterval(update, 60_000); return () => window.clearInterval(timer); }, []);
   const sceneId: SceneId = choice === "auto" ? (hourNow < 0 ? "dusk" : sceneForHour(hourNow)) : choice;
   const scene = SCENES.find(s => s.id === sceneId) ?? SCENES[0];
-  const [layout, setLayout] = useState<Layout>("horizon");
+  const [layout, setLayout] = useState<Layout>("focus");
   const [font, setFont] = useState<FontId>("clean");
   const look = scene.tone;
   useEffect(() => {
@@ -229,7 +229,7 @@ export default function Lab() {
                 <Glass blur className={styles.card}>
                   <div className={styles.cardHead}><h2 className={`${styles.cardTitle} serif`}>Layout and font</h2></div>
                   <SegmentedControl label="Today layout" value={layout} onChange={changeLayout} options={LAYOUTS}/>
-                  <p className={styles.hint}>{layout === "card" ? "One glass card, like a phone widget." : layout === "bento" ? "Small tiles: week, today, break, finish time." : "The sky stays open; everything sits on one sheet."}</p>
+                  <p className={styles.hint}>{layout === "focus" ? "One screen, no scrolling. Start sits by your thumb." : layout === "card" ? "One glass card, like a phone widget." : layout === "bento" ? "Small tiles: week, today, break, finish time." : "The sky stays open; everything sits on one sheet."}</p>
                   <Row label="Font" hint={font === "clean" ? "Crisp, like iOS" : font === "soft" ? "Round and friendly" : "Serif titles, magazine feel"}><SegmentedControl label="Font" value={font} onChange={changeFont} options={FONTS}/></Row>
                   <Button variant="glass" size="small" onClick={() => changeTab("today")}>See it on Today</Button>
                 </Glass>
