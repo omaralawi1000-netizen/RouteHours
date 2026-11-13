@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, m } from "motion/react";
-import { Bus, ChevronRight, Footprints, Coffee, FastForward, Flag, Play, Plus, Settings2, Square, Sun, TriangleAlert, X } from "lucide-react";
+import { Bus, ChevronRight, Clock, Footprints, Coffee, FastForward, Flag, Play, Plus, Settings2, Square, Sun, TriangleAlert, X } from "lucide-react";
 import { useNow } from "../features/use-now";
 import Button from "../ui/button";
 import Glass from "../ui/glass";
@@ -54,7 +54,7 @@ export type Alert = { id: string; text: string; icon?: ReactNode; action?: { lab
 export default function Today(props: {
   phase: Phase; startedAt: number; endedAt: number; weekMinutes: number; todayMinutes: number; chipPulse: number; dateLabel: string;
   note?: string; layout: Layout; recent: RecentShift[]; mic: MicState; level: number; micSeconds: number; breaks: Break[]; weekDays: DayBar[];
-  dayOff?: boolean; onLogUsualDay: () => void; stillDriving?: boolean; onStillDriving: () => void; onAutoFinish: (at: number) => void; travel?: number;
+  dayOff?: boolean; onLogUsualDay: () => void; stillDriving?: boolean; onStillDriving: () => void; onAutoFinish: (at: number) => void; travel?: number; onBackdate?: (at: number, label: string) => void;
   onBreak: () => void; onStartUsual: () => void; onUndo: () => void; onStart: () => void; onFinish: () => void; onFastForward: () => void; onMic: () => void; onAddPast: () => void; onOpenShift: (shift: RecentShift) => void; onSettings: () => void;
 }) {
   const { phase, startedAt, endedAt, weekMinutes, todayMinutes, chipPulse, dateLabel, recent } = props;
@@ -144,6 +144,14 @@ export default function Today(props: {
   const clockNow = copenhagenMinutes(running ? now : clock);
   const weekday = new Date(clock).getDay() % 6 !== 0;
   const alerts: Alert[] = [];
+  // "Forgot to start?": Start tapped 10 min to 3 h after a usual run begins offers the usual time.
+  const startClock = copenhagenMinutes(startedAt);
+  const startPart = part ?? DAY_PARTS.find(p => startClock >= toMinutes(p.start) && startClock < toMinutes(p.end));
+  const lateBy = startPart ? startClock - toMinutes(startPart.start) : 0;
+  if (running && startPart && props.onBackdate && lateBy >= 10 && lateBy <= 180) {
+    const at = Math.floor(startedAt / 60000) * 60000 - lateBy * 60000, label = startPart.start, backdate = props.onBackdate;
+    alerts.push({ id: `start-${startedAt}`, text: `Started at ${label}? You tapped Start at ${clockTime(startedAt)}.`, icon: <Clock/>, action: { label: `Use ${label}`, onClick: () => backdate(at, label) } });
+  }
   if (running && elapsed > 10 * 3600000) alerts.push({ id: "long", text: "This shift has run over 10 hours. Forgot to finish?", action: { label: "Finish", onClick: props.onFinish } });
   else if (running && !onBreak && part && !props.stillDriving && clockNow > toMinutes(part.end) + 30) alerts.push({ id: `late-${part.id}`, text: `Past ${part.end}. Still driving? It stops by itself at ${minutesToClock(toMinutes(part.end) + AUTO_FINISH_AFTER)}.`, action: { label: "Finish", onClick: props.onFinish }, alt: { label: "Still driving", onClick: props.onStillDriving } });
   const leaveFrom = upcoming && props.travel ? toMinutes(upcoming.start) - props.travel : null;

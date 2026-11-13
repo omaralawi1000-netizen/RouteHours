@@ -7,7 +7,6 @@ import { Check, CalendarDays, FlaskConical, Send, Sun, Trash2 } from "lucide-rea
 import Button from "../ui/button";
 import Glass from "../ui/glass";
 import HoldButton from "../ui/hold-button";
-import { type MicState } from "../ui/mic-pill";
 import SegmentedControl from "../ui/segmented-control";
 import Sheet from "../ui/sheet";
 import StatusPill, { type WeekStatus } from "../ui/status-pill";
@@ -21,8 +20,9 @@ import { type DayBar } from "../ui/week-bars";
 import WeekStrip, { type WeekData } from "../ui/week-strip";
 import { setHaptics, tick } from "../ui/haptics";
 import { spring, springSpec, type SpringName } from "../ui/motion";
-import Today, { clockTime, DAY_PARTS, hm, nextPart, usualDayMinutes, type Layout, type Phase, type RecentShift } from "./today";
+import Today, { clockTime, DAY_PARTS, hm, nextPart, RATE, usualDayMinutes, type Layout, type Phase, type RecentShift } from "./today";
 import Reminders, { useTravel } from "./reminders";
+import { AskCard, GeminiCard, PayslipCard, useGeminiKey, useVoice, type Logged } from "./ai";
 import { item, screen } from "./stagger";
 import styles from "./lab.module.css";
 
@@ -137,13 +137,15 @@ export default function Lab() {
   const [note, setNote] = useState<string | undefined>();
   const [stillDriving, setStillDriving] = useState(false);
   const [travel, setTravel] = useTravel();
+  const [geminiKey, setGeminiKey] = useGeminiKey();
+  const [spoken, setSpoken] = useState<string | undefined>();
   // A running shift survives closing the app, so Finish from a shortcut or a reminder still finds it.
   const restored = useRef(false);
   useEffect(() => {
     try {
-      const run = JSON.parse(localStorage.getItem(RUN_KEY) ?? "null") as { startedAt?: number; breaks?: Break[]; note?: string; stillDriving?: boolean } | null;
+      const run = JSON.parse(localStorage.getItem(RUN_KEY) ?? "null") as { startedAt?: number; breaks?: Break[]; note?: string; spoken?: string; stillDriving?: boolean } | null;
       if (run && typeof run.startedAt === "number" && Date.now() - run.startedAt < 16 * 3600000) {
-        setStartedAt(run.startedAt); setBreaks(Array.isArray(run.breaks) ? run.breaks : []); setNote(run.note); setStillDriving(!!run.stillDriving); setPhase("running");
+        setStartedAt(run.startedAt); setBreaks(Array.isArray(run.breaks) ? run.breaks : []); setNote(run.note); setSpoken(run.spoken); setStillDriving(!!run.stillDriving); setPhase("running");
       }
     } catch { /* start fresh */ }
     restored.current = true;
@@ -151,11 +153,11 @@ export default function Lab() {
   useEffect(() => {
     if (!restored.current) return;
     try {
-      if (phase === "running") localStorage.setItem(RUN_KEY, JSON.stringify({ startedAt, breaks, note, stillDriving }));
+      if (phase === "running") localStorage.setItem(RUN_KEY, JSON.stringify({ startedAt, breaks, note, spoken, stillDriving }));
       else if (phase === "idle") localStorage.removeItem(RUN_KEY);
     } catch { /* kept for this visit */ }
-  }, [phase, startedAt, breaks, note, stillDriving]);
-  function start(withNote?: string) { tick(); setSaved(null); setBreaks([]); setNote(withNote); setStillDriving(false); setStartedAt(Date.now()); setPhase("running"); }
+  }, [phase, startedAt, breaks, note, spoken, stillDriving]);
+  function start(withNote?: string) { tick(); setSaved(null); setBreaks([]); setNote(withNote); setSpoken(undefined); setStillDriving(false); setStartedAt(Date.now()); setPhase("running"); }
   function startUsual() {
     const part = nextPart();
     if (!part) { logUsualDay(); return; }
@@ -186,7 +188,7 @@ export default function Lab() {
     later(1100, () => {
       setPhase("idle"); setSaved(record);
       say(message ?? `Shift saved · ${hm(minutes)} added`, { label: "Undo", onClick: () => undoShift(record) });
-      setRecent(list => [{ id, day: "Today", start: clockTime(startedAt), end: clockTime(end), minutes, note }, ...list]);
+      setRecent(list => [{ id, day: "Today", start: clockTime(startedAt), end: clockTime(end), minutes, note: [note, spoken].filter(Boolean).join(" · ") || undefined }, ...list]);
     });
     later(8000, () => setSaved(current => current?.id === id ? null : current));
   }
@@ -204,6 +206,8 @@ export default function Lab() {
     navigator.serviceWorker?.addEventListener("message", onMessage);
     return () => navigator.serviceWorker?.removeEventListener("message", onMessage);
   }, []);
+  /** "Forgot to start?": move the start back to when the run usually begins. */
+  function backdate(at: number, label: string) { setStartedAt(at); setBreaks(list => list.filter(b => b.start >= at)); say(`Start moved to ${label}`); }
   function keepDriving() { setStillDriving(true); say("Got it. It won't finish on its own this run."); }
   function autoFinish(at: number) { finish(at, `Finished on its own at ${clockTime(at)}`); }
   function undoShift(record: { minutes: number; startedAt: number; id: number }) {
@@ -229,21 +233,38 @@ export default function Lab() {
   if (editing) lastEditing.current = editing;
   const sheetShift = editing ?? lastEditing.current;
 
-  const [mic, setMic] = useState<MicState>("idle");
-  const [level, setLevel] = useState(0);
-  const [micSeconds, setMicSeconds] = useState(0);
-  useEffect(() => {
-    if (mic !== "listening") return;
-    const begun = Date.now();
-    const timer = window.setInterval(() => {
-      setLevel(current => Math.max(0.08, Math.min(1, current * 0.55 + Math.random() * 0.75)));
-      setMicSeconds(Math.floor((Date.now() - begun) / 1000));
-    }, 90);
-    return () => window.clearInterval(timer);
-  }, [mic]);
-  function toggleMic() {
-    if (mic === "idle") { setMicSeconds(0); setLevel(0.3); setMic("listening"); return; }
-    if (mic === "listening") { setMic("writing"); window.setTimeout(() => { setMic("idle"); say("Note added: late from Aarhus C, roadworks"); }, 1300); }
+  // Voice notes: Gemini writes down what you say. On shift it goes with the shift; otherwise on the last one.
+  function needKey() { say("Paste your Gemini key in Lab first", { label: "Open Lab", onClick: () => changeTab("lab") }); }
+  const voice = useVoice({
+    apiKey: geminiKey,
+    onText: text => {
+      if (phase === "running") setSpoken(current => current ? `${current} · ${text}` : text);
+      else setRecent(list => list.map((shift, i) => i === 0 ? { ...shift, note: [shift.note, text].filter(Boolean).join(" · ") } : shift));
+      say(`Note added: ${text}`);
+    },
+    onError: message => message.startsWith("Paste your Gemini key") ? needKey() : say(message),
+  });
+
+  // What "Ask your hours" and the payslip check know: every logged day with its date.
+  const FIRST_MONDAY = Date.UTC(2026, 9, 26);
+  const isoDay = (week: number, day: number) => new Date(FIRST_MONDAY + (week * 7 + day) * 86400000).toISOString().slice(0, 10);
+  const loggedDays = () => weeks.flatMap((week, w) => week.days.map((d, i) => ({ date: isoDay(w, i), minutes: d.minutes })));
+  function hoursContext() {
+    const days = loggedDays();
+    return [
+      `Today is ${new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Europe/Copenhagen" }).format(Date.now())}.`,
+      `Hourly pay ${RATE} kr before tax. Weekly goal 37:00. Logged days start ${days[0].date}; earlier days are not in the app.`,
+      `Usual split shift: ${DAY_PARTS.map(p => `${p.label} ${p.start}-${p.end}`).join(", ")}.`,
+      "Days (date: hours worked):",
+      ...days.map(d => `${d.date} ${new Date(`${d.date}T12:00:00Z`).toLocaleDateString("en-GB", { weekday: "short" })}: ${hm(d.minutes)}`),
+      "Recent shifts:",
+      ...recent.map(r => `${r.day} ${r.start}-${r.end} (${hm(r.minutes)})${r.note ? `, note: ${r.note}` : ""}`),
+      phase === "running" ? `A shift is running since ${clockTime(startedAt)}.` : "",
+    ].filter(Boolean).join("\n");
+  }
+  function logged(from: string, to: string): Logged {
+    const days = loggedDays().filter(d => d.date >= from && d.date <= to);
+    return { minutes: days.reduce((sum, d) => sum + d.minutes, 0), from: days[0]?.date ?? null };
   }
 
   const running = phase === "running";
@@ -255,9 +276,9 @@ export default function Lab() {
         <AnimatePresence initial={true} custom={direction}>
           {mounted && <m.main key={tab} className={styles.page} custom={direction} variants={screen} initial={opened ? "enter" : "hidden"} animate="show" exit="leave">
             {tab === "today" && <Today phase={phase} startedAt={startedAt} endedAt={endedAt} weekMinutes={weekMinutes} todayMinutes={todayMinutes} chipPulse={chipPulse} dateLabel={dateLabel}
-              recent={recent} mic={mic} level={level} micSeconds={micSeconds}
+              recent={recent} mic={voice.mic} level={voice.level} micSeconds={voice.seconds}
               layout={layout} note={note} breaks={breaks} weekDays={weekDays} onBreak={toggleBreak} onStartUsual={startUsual} onLogUsualDay={logUsualDay} dayOff={mark !== "worked"} stillDriving={stillDriving} onStillDriving={keepDriving} onAutoFinish={autoFinish} travel={travel}
-              onUndo={undoFinish} onStart={() => start()} onFinish={() => finish()} onFastForward={() => { setStartedAt(value => value - 3_600_000); setBreaks(list => list.map(b => ({ start: b.start - 3_600_000, end: b.end && b.end - 3_600_000 }))); }} onMic={toggleMic}
+              onUndo={undoFinish} onStart={() => start()} onFinish={() => finish()} onFastForward={() => { setStartedAt(value => value - 3_600_000); setBreaks(list => list.map(b => ({ start: b.start - 3_600_000, end: b.end && b.end - 3_600_000 }))); }} onMic={voice.toggle} onBackdate={backdate}
               onAddPast={() => setEditing({ id: -1, day: "New", start: "06:00", end: "14:00", minutes: 480 })} onOpenShift={setEditing} onSettings={() => changeTab("lab")}/>}
 
             {tab === "week" && <>
@@ -285,6 +306,8 @@ export default function Lab() {
                   </div>
                 </Glass>
               </m.section>
+              <m.section variants={item}><AskCard apiKey={geminiKey} context={hoursContext} say={say} onNeedKey={needKey}/></m.section>
+              <m.section variants={item}><PayslipCard apiKey={geminiKey} logged={logged} say={say} onNeedKey={needKey}/></m.section>
               <m.p variants={item} className={styles.hint}>Swipe the bars sideways to change week. Sending is the one thing you can&apos;t undo, so you hold it.</m.p>
             </>}
 
@@ -293,6 +316,7 @@ export default function Lab() {
                 <div><p className={styles.eyebrow}>Headlight lab</p><h1 className={`${styles.title} serif`}>Tune the look</h1></div>
               </m.header>
               <m.section variants={item}><Reminders say={say} travel={travel} onTravel={setTravel}/></m.section>
+              <m.section variants={item}><GeminiCard apiKey={geminiKey} onSave={setGeminiKey} say={say}/></m.section>
               <m.section variants={item}>
                 <Glass blur className={styles.card}>
                   <div className={styles.cardHead}><h2 className={`${styles.cardTitle} serif`}>Layout and font</h2></div>
