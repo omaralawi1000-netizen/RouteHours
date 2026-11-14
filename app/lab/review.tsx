@@ -54,12 +54,26 @@ function seed(recent: RecentShift[], todayIndex: number): SheetDay[] {
   });
 }
 
+/**
+ * The week for Review & send: the logged shifts, with your edits laid over them one day at a time.
+ * An edit remembers the logged day it was made on. If that day's logged shifts change afterwards
+ * (a new shift, an undo, a delete), the logged hours win for that day; the other days keep your edits.
+ */
 export function useTimesheet(recent: RecentShift[], todayIndex: number, todayMark: Mark) {
-  const [edited, setEdited] = useState<SheetDay[] | null>(null);
-  const days = useMemo(() => (edited ?? seed(recent, todayIndex)).map((day, index) => ({ ...day, mark: day.mark ?? (index === todayIndex ? todayMark : "") })), [edited, recent, todayIndex, todayMark]);
+  const [overrides, setOverrides] = useState<Record<number, { base: string; day: SheetDay }>>({});
+  const seeded = useMemo(() => seed(recent, todayIndex), [recent, todayIndex]);
+  const live = useMemo(() => seeded.map((day, index) => { const o = overrides[index]; return o && o.base === JSON.stringify(day) ? o.day : null; }), [seeded, overrides]);
+  const days = useMemo(() => seeded.map((day, index) => {
+    const use = live[index] ?? day;
+    return { ...use, mark: use.mark ?? (index === todayIndex ? todayMark : "") };
+  }), [seeded, live, todayIndex, todayMark]);
   const total = days.reduce((sum, day) => sum + dayMinutes(day), 0);
   const shifts = days.filter(day => day.pieces.some(piece => pieceMinutes(piece) > 0)).length;
-  return { days, total, shifts, edited: edited !== null, setDays: (next: SheetDay[]) => setEdited(next), reset: () => setEdited(null) };
+  return {
+    days, total, shifts, edited: live.some(Boolean),
+    setDay: (index: number, day: SheetDay) => setOverrides(list => ({ ...list, [index]: { base: JSON.stringify(seeded[index]), day } })),
+    reset: () => setOverrides({}),
+  };
 }
 export type Timesheet = ReturnType<typeof useTimesheet>;
 
@@ -93,7 +107,7 @@ export default function ReviewSheet({ open, onClose, sheet, sent, onSent, onEdit
   const filename = "RouteHours-uge-46.xlsx";
 
   function change(index: number, patch: Partial<SheetDay>) {
-    sheet.setDays(sheet.days.map((day, i) => i === index ? { ...day, ...patch } : day));
+    sheet.setDay(index, { ...sheet.days[index], ...patch });
     onEdited();
   }
   function changePiece(index: number, piece: number, patch: Partial<Piece>) {

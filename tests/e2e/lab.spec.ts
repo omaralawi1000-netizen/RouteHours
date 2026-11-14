@@ -216,3 +216,26 @@ test.describe("lab: smooth on a phone", () => {
     await expect(page.locator("main")).not.toContainText("-1");
   });
 });
+
+test("lab: a shift logged after editing the timesheet still lands on it, and the edit stays", async ({ page }) => {
+  await page.route(url => !["127.0.0.1", "localhost"].includes(url.hostname), route => route.abort());
+  await page.goto("/lab");
+  await page.getByRole("button", { name: "Week", exact: true }).click();
+  await page.getByRole("button", { name: "Review & send" }).click();
+  const sheet = page.getByRole("dialog", { name: "Review & send" });
+  await sheet.getByRole("button", { name: /^Tue/ }).click();
+  await sheet.getByLabel("End", { exact: true }).fill("14:34");
+  await expect(sheet.getByText("16:07 worked", { exact: false })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(sheet).toHaveCount(0);
+  // Log an hour on Today, then look again.
+  await page.getByRole("button", { name: "Today", exact: true }).click();
+  await page.getByRole("button", { name: "Start shift" }).click();
+  await page.getByRole("button", { name: "Lab: jump 1 hour" }).click();
+  await page.getByRole("button", { name: "Finish shift" }).click();
+  await expect(page.getByRole("button", { name: "Undo" })).toBeVisible();
+  await page.getByRole("button", { name: "Week", exact: true }).click();
+  await page.getByRole("button", { name: "Review & send" }).click();
+  await expect(sheet.getByText("17:07 worked", { exact: false })).toBeVisible();
+  await expect(sheet.getByRole("button", { name: /^Tue/ })).toContainText("8:22");
+});
