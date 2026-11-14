@@ -245,6 +245,9 @@ export default function Lab() {
   const weeks = WEEKS.map((week, index) => index === WEEKS.length - 1 ? { ...week, days: week.days.map((d, i) => ({ ...d, minutes: i === todayIndex ? d.minutes + todayMinutes : d.minutes, today: i === todayIndex })) } : week);
   const weekDays: DayBar[] = weeks[WEEKS.length - 1].days.map((d, i) => ({ short: d.short, minutes: d.minutes, today: i === todayIndex, mark: i === todayIndex && mark !== "worked" ? (mark === "syg" ? "Syg" : "Fri") : undefined }));
   const [editing, setEditing] = useState<RecentShift | null>(null);
+  // A sheet covers the bottom of the screen, so an older message (like "Shift saved · Undo") would sit on top of its fields. Clear it when one opens.
+  const sheetOpen = reviewing || !!editing;
+  useEffect(() => { if (sheetOpen) setToast(null); }, [sheetOpen]);
   const lastEditing = useRef<RecentShift | null>(null);
   if (editing) lastEditing.current = editing;
   const sheetShift = editing ?? lastEditing.current;

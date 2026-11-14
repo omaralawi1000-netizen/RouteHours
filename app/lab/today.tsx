@@ -19,7 +19,7 @@ export type Layout = "focus" | "card" | "bento" | "horizon";
 export type Phase = "idle" | "running" | "landing";
 export type RecentShift = { id: number; day: string; start: string; end: string; minutes: number; note?: string; pieces?: { start: string; end: string }[] };
 
-export function hm(minutes: number) { return `${Math.floor(minutes / 60)}:${String(Math.floor(minutes % 60)).padStart(2, "0")}`; }
+export function hm(raw: number) { const minutes = Math.max(0, raw); return `${Math.floor(minutes / 60)}:${String(Math.floor(minutes % 60)).padStart(2, "0")}`; }
 export function hms(ms: number) { const s = Math.max(0, Math.floor(ms / 1000)); return `${Math.floor(s / 3600)}:${String(Math.floor(s / 60) % 60).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`; }
 export function clockTime(ms: number) { return new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Copenhagen" }).format(ms); }
 
@@ -61,7 +61,8 @@ export default function Today(props: {
   const { breaks, layout } = props;
   const running = phase === "running";
   const now = useNow(1000, running);
-  const end = phase === "landing" ? endedAt : now;
+  // The clock ticks once a second, so a tap (Start, Break, Resume) can be newer than the last tick: never count backwards.
+  const end = phase === "landing" ? endedAt : Math.max(now, startedAt, ...breaks.map(b => Math.max(b.start, b.end ?? 0)));
   const onBreak = running && breaks.some(b => !b.end);
   const breakMs = breaks.reduce((sum, b) => sum + ((b.end ?? end) - b.start), 0);
   const elapsed = end - startedAt - breakMs;
@@ -98,8 +99,8 @@ export default function Today(props: {
   }
 
   const idle = phase === "idle";
-  const eyebrowText = onBreak ? "On break" : idle ? "This week" : "On shift";
-  const metaText = idle ? `≈ ${kr(weekMinutes)} before tax` : `≈ ${kr(elapsed / 60000)} so far`;
+  const eyebrowText = onBreak ? "On break" : idle ? "This week" : phase === "landing" ? "Shift done" : "On shift";
+  const metaText = idle ? `≈ ${kr(weekMinutes)} before tax` : phase === "landing" ? `≈ ${kr(elapsed / 60000)} earned` : `≈ ${kr(elapsed / 60000)} so far`;
   const swap = { initial: { opacity: 0, y: 6 }, animate: { opacity: 1, y: 0 }, exit: { opacity: 0, y: -6, transition: fade }, transition: spring.snappy };
   const eyebrow = <AnimatePresence mode="popLayout" initial={false}><m.p key={eyebrowText} className={styles.eyebrow} {...swap}>{eyebrowText}</m.p></AnimatePresence>;
   const timer = onBreak && currentBreak ? hms(end - currentBreak.start) : hms(elapsed);

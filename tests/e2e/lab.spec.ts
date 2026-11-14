@@ -170,3 +170,49 @@ test("lab: review & send shows the real sheet, edits a day in place and download
   await expect(page.getByText("Demo: nothing was sent.", { exact: false })).toBeVisible();
   await expect(page.getByRole("button", { name: "See what was sent" })).toBeVisible();
 });
+
+test.describe("lab: smooth on a phone", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.route(url => !["127.0.0.1", "localhost"].includes(url.hostname), route => route.abort());
+    await page.goto("/lab");
+  });
+
+  test("the wallpaper stays put while the page scrolls", async ({ page }) => {
+    const wall = page.locator("[class*=wallpaper-module][class*=wall]").first();
+    const before = await wall.evaluate(el => [el.getBoundingClientRect().top, el.querySelector("svg")!.getBoundingClientRect().top]);
+    await page.evaluate(() => window.scrollBy(0, 300));
+    await page.waitForTimeout(200);
+    expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+    expect(await wall.evaluate(el => [el.getBoundingClientRect().top, el.querySelector("svg")!.getBoundingClientRect().top])).toEqual(before);
+  });
+
+  test("only cards and bars pay for a blur, and nothing under them repaints in a loop", async ({ page }) => {
+    await expect(page.getByRole("button", { name: "Start shift" })).toBeVisible();
+    const blurred = await page.evaluate(() => [...document.querySelectorAll("*")].filter(el => getComputedStyle(el).backdropFilter !== "none").length);
+    expect(blurred).toBeLessThanOrEqual(3);
+    const loops = await page.evaluate(() => document.getAnimations().filter(a => a.effect?.getComputedTiming().iterations === Infinity).map(a => (a as CSSAnimation).animationName));
+    expect(loops.every(name => /drift/.test(name))).toBe(true);
+  });
+
+  test("every tab fits the screen width", async ({ page }) => {
+    for (const tab of ["Today", "Week", "Lab"]) {
+      await page.getByRole("button", { name: tab, exact: true }).click();
+      await page.waitForTimeout(600);
+      const width = await page.locator("main").first().evaluate(el => el.getBoundingClientRect().width);
+      expect(width, tab).toBeLessThanOrEqual(await page.evaluate(() => document.documentElement.clientWidth));
+    }
+  });
+
+  test("the card below the clock doesn't hop on Start, and a break never counts below zero", async ({ page }) => {
+    const button = page.getByRole("button", { name: "Start shift" });
+    const top = async () => (await page.getByRole("button", { name: /Start shift|Finish shift/ }).boundingBox())!.y;
+    await page.waitForTimeout(1200); // let the page's entrance settle
+    const idle = await top();
+    await button.click();
+    await page.waitForTimeout(900);
+    expect(Math.abs((await top()) - idle)).toBeLessThan(1);
+    await page.getByRole("button", { name: "Break", exact: true }).click();
+    await page.waitForTimeout(150);
+    await expect(page.locator("main")).not.toContainText("-1");
+  });
+});
