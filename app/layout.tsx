@@ -1,7 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import Script from "next/script";
 import PwaRegistration from "./pwa-registration";
-import "./globals.css";
 export const metadata: Metadata = {
   title: "RouteHours — Bus shift tracker",
   description: "A calm, private space to track bus shifts and export hours.",

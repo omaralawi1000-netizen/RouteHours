@@ -8,21 +8,27 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test lib/*.test.ts"
+    "test": "node --experimental-strip-types --test lib/*.test.ts app/api/push/*.test.ts app/api/ai/*.test.ts app/api/google/*.test.ts",
+    "test:e2e": "playwright test --project=flows",
+    "test:visual": "playwright test --project=visual"
   },
   "dependencies": {
+    "@vercel/blob": "^2.9.0",
     "exceljs": "^4.4.0",
     "lucide-react": "^0.468.0",
     "motion": "^13.4.4",
     "next": "^16.3.6",
     "react": "^19.3.0",
-    "react-dom": "^19.3.0"
+    "react-dom": "^19.3.0",
+    "web-push": "^4.0.0"
   },
   "devDependencies": {
     "@next/swc-wasm-nodejs": "16.3.6",
+    "@playwright/test": "1.63.0",
     "@types/node": "^24.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@types/web-push": "^3.6.4",
     "typescript": "^5.0.0"
   }
 }

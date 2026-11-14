@@ -1,0 +1,458 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { flushSync } from "react-dom";
+import { AnimatePresence, LazyMotion, domMax, MotionConfig, m } from "motion/react";
+import { Check, CalendarDays, FileSpreadsheet, FlaskConical, Sun, Trash2 } from "lucide-react";
+import Button from "../ui/button";
+import Glass from "../ui/glass";
+import SegmentedControl from "../ui/segmented-control";
+import Sheet from "../ui/sheet";
+import StatusPill, { type WeekStatus } from "../ui/status-pill";
+import TabBar from "../ui/tab-bar";
+import Toast, { type ToastMessage } from "../ui/toast";
+import Toggle from "../ui/toggle";
+import Wallpaper from "../ui/wallpaper";
+import { SCENES, type SceneId } from "../ui/wallpaper-scenes";
+import { type Break } from "../ui/shift-line";
+import { type DayBar } from "../ui/week-bars";
+import WeekStrip, { type WeekData } from "../ui/week-strip";
+import { setHaptics, tick } from "../ui/haptics";
+import { spring, springSpec, type SpringName } from "../ui/motion";
+import Today, { clockTime, DAY_PARTS, hm, nextPart, RATE, usualDayMinutes, type Layout, type Phase, type RecentShift } from "./today";
+import Reminders, { useTravel } from "./reminders";
+import { AskCard, GeminiCard, PayslipCard, useGeminiKey, useVoice, type Logged } from "./ai";
+import ReviewSheet, { useTimesheet } from "./review";
+import { item, screen } from "./stagger";
+import styles from "./lab.module.css";
+
+type TabId = "today" | "week" | "lab";
+
+const day = (short: string, minutes: number) => ({ short, minutes });
+const WEEKS: WeekData[] = [
+  { label: "26 Oct – 1 Nov", days: [day("M", 462), day("T", 445), day("W", 0), day("T", 478), day("F", 431), day("S", 250), day("S", 0)] },
+  { label: "2 – 8 Nov", days: [day("M", 470), day("T", 0), day("W", 455), day("T", 488), day("F", 440), day("S", 0), day("S", 0)] },
+  { label: "This week", days: [day("M", 465), day("T", 442), day("W", 0), day("T", 0), day("F", 0), day("S", 0), day("S", 0)] },
+];
+const RECENT: RecentShift[] = [
+  { id: 3, day: "Tuesday", start: "06:12", end: "13:34", minutes: 442, note: "Route 2A" },
+  { id: 2, day: "Monday", start: "05:48", end: "13:33", minutes: 465, note: "Route 4" },
+  { id: 1, day: "Last week", start: "Fri 06:00", end: "13:20", minutes: 440 },
+];
+
+/** Where a demo shift sits in WEEKS, as "week:day". "Today" has no fixed slot: it lives in todayMinutes. */
+const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+function slotOf(shift: RecentShift): { week: number; day: number } | null {
+  const day = DAY_NAMES.indexOf(shift.day);
+  if (day >= 0) return { week: WEEKS.length - 1, day };
+  const short = shift.day === "Last week" ? DAY_NAMES.findIndex(name => shift.start.startsWith(name.slice(0, 3))) : -1;
+  return short >= 0 ? { week: WEEKS.length - 2, day: short } : null;
+}
+
+type DayMark = "worked" | "syg" | "fri";
+const SCENE_KEY = "routehours:lab-wallpaper";
+const LAYOUT_KEY = "routehours:lab-layout-v4";
+const FONT_KEY = "routehours:lab-font-v2";
+const RUN_KEY = "routehours:lab-run";
+type FontId = "modern" | "clean" | "character" | "editorial";
+const FONTS: { value: FontId; label: string }[] = [{ value: "modern", label: "Modern" }, { value: "clean", label: "Clean" }, { value: "character", label: "Bold" }, { value: "editorial", label: "Serif" }];
+const LAYOUTS: { value: Layout; label: string }[] = [{ value: "card", label: "Card" }, { value: "focus", label: "Focus" }, { value: "bento", label: "Tiles" }, { value: "horizon", label: "Sheet" }];
+/** Auto wallpaper: dawn sea in the morning, desert by day, dusk hills in the evening, the fjord at night. */
+function sceneForHour(hour: number): SceneId { return hour >= 5 && hour < 10 ? "ocean" : hour >= 10 && hour < 16 ? "desert" : hour >= 16 && hour < 21 ? "dusk" : "fjord"; }
+
+export default function Lab() {
+  const [choice, setChoice] = useState<SceneId | "auto">("auto");
+  const [hourNow, setHourNow] = useState(-1);
+  useEffect(() => { const update = () => setHourNow(new Date().getHours()); update(); const timer = window.setInterval(update, 60_000); return () => window.clearInterval(timer); }, []);
+  const sceneId: SceneId = choice === "auto" ? (hourNow < 0 ? "dusk" : sceneForHour(hourNow)) : choice;
+  const scene = SCENES.find(s => s.id === sceneId) ?? SCENES[0];
+  const [layout, setLayout] = useState<Layout>("card");
+  const [font, setFont] = useState<FontId>("modern");
+  const look = scene.tone;
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(SCENE_KEY); if (stored && (stored === "auto" || SCENES.some(s => s.id === stored))) setChoice(stored as SceneId | "auto");
+      const storedFont = localStorage.getItem(FONT_KEY); if (storedFont && FONTS.some(f => f.value === storedFont)) setFont(storedFont as FontId);
+      const storedLayout = localStorage.getItem(LAYOUT_KEY); if (storedLayout && LAYOUTS.some(l => l.value === storedLayout)) setLayout(storedLayout as Layout);
+    } catch { /* private mode: keep the defaults */ }
+  }, []);
+  const [tab, setTab] = useState<TabId>("today");
+  const [blur, setBlur] = useState(true);
+  const [reduce, setReduce] = useState(false);
+  const [haptics, setHapticsOn] = useState(true);
+  const [weight, setWeight] = useState<"300" | "200">("200");
+
+  const [phase, setPhase] = useState<Phase>("idle");
+  const [startedAt, setStartedAt] = useState(0);
+  const [endedAt, setEndedAt] = useState(0);
+  const [weekMinutes, setWeekMinutes] = useState(907);
+  const [todayMinutes, setTodayMinutes] = useState(0);
+  const [chipPulse, setChipPulse] = useState(0);
+  const [recent, setRecent] = useState(RECENT);
+  // Minutes taken off a seeded day by deleting its shift, keyed "week:day", so the bars and totals follow a delete.
+  const [removed, setRemoved] = useState<Record<string, number>>({});
+  const [saved, setSaved] = useState<{ minutes: number; startedAt: number; id: number; breaks?: Break[] } | null>(null);
+  const timers = useRef<number[]>([]);
+  const later = (ms: number, run: () => void) => { timers.current.push(window.setTimeout(run, ms)); };
+  useEffect(() => () => timers.current.forEach(window.clearTimeout), []);
+
+  const [toast, setToast] = useState<ToastMessage | null>(null);
+  const say = useCallback((text: string, action?: ToastMessage["action"]) => setToast({ id: Date.now(), text, action }), []);
+  const [dateLabel, setDateLabel] = useState("");
+  const [todayIndex, setTodayIndex] = useState(-1);
+  useEffect(() => {
+    setDateLabel(new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: "Europe/Copenhagen" }).format(Date.now()));
+    setTodayIndex((new Date().getDay() + 6) % 7);
+  }, []);
+  useEffect(() => { setHaptics(haptics); }, [haptics]);
+  useEffect(() => {
+    const color = scene.colors["--sky-top"];
+    document.querySelectorAll<HTMLMetaElement>("meta[name=theme-color]").forEach(meta => { meta.removeAttribute("media"); meta.content = color; });
+    document.documentElement.style.background = color;
+  }, [scene]);
+
+  // The sky colours blend on their own. Only a switch between a dark and a light scene changes the text colours, so that one crossfades the page.
+  function changeFont(next: FontId) {
+    tick(); setFont(next);
+    try { localStorage.setItem(FONT_KEY, next); } catch { /* not saved, still applied */ }
+  }
+  function changeLayout(next: Layout) {
+    tick(); setLayout(next);
+    try { localStorage.setItem(LAYOUT_KEY, next); } catch { /* not saved, still applied */ }
+  }
+  function changeScene(next: SceneId | "auto") {
+    tick();
+    try { localStorage.setItem(SCENE_KEY, next); } catch { /* not saved, still applied */ }
+    const nextTone = SCENES.find(s => s.id === (next === "auto" ? sceneForHour(new Date().getHours()) : next))?.tone;
+    const doc = document as Document & { startViewTransition?: (update: () => void) => unknown };
+    if (nextTone !== look && doc.startViewTransition && !reduce && !matchMedia("(prefers-reduced-motion: reduce)").matches) doc.startViewTransition(() => flushSync(() => setChoice(next)));
+    else setChoice(next);
+  }
+  const TAB_ORDER: TabId[] = ["today", "week", "lab"];
+  const [direction, setDirection] = useState(1);
+  const [opened, setOpened] = useState(false);
+  // Pages are drawn only once the phone has the page, so nothing on them changes or jumps a moment
+  // later (greeting, checks, chips); the wallpaper and tab bar are there from the very first frame.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  function changeTab(next: TabId) {
+    if (next === tab) return;
+    setOpened(true);
+    setDirection(TAB_ORDER.indexOf(next) > TAB_ORDER.indexOf(tab) ? 1 : -1);
+    setTab(next);
+    // Jump, don't scroll: the new page slides in at its top while the old one slides away.
+    window.scrollTo({ top: 0, behavior: "auto" });
+  }
+
+  const [breaks, setBreaks] = useState<Break[]>([]);
+  const [note, setNote] = useState<string | undefined>();
+  const [stillDriving, setStillDriving] = useState(false);
+  const [travel, setTravel] = useTravel();
+  const [geminiKey, setGeminiKey] = useGeminiKey();
+  const [spoken, setSpoken] = useState<string | undefined>();
+  // A running shift survives closing the app, so Finish from a shortcut or a reminder still finds it.
+  const restored = useRef(false);
+  useEffect(() => {
+    try {
+      const run = JSON.parse(localStorage.getItem(RUN_KEY) ?? "null") as { startedAt?: number; breaks?: Break[]; note?: string; spoken?: string; stillDriving?: boolean } | null;
+      if (run && typeof run.startedAt === "number" && Date.now() - run.startedAt < 16 * 3600000) {
+        setStartedAt(run.startedAt); setBreaks(Array.isArray(run.breaks) ? run.breaks : []); setNote(run.note); setSpoken(run.spoken); setStillDriving(!!run.stillDriving); setPhase("running");
+      }
+    } catch { /* start fresh */ }
+    restored.current = true;
+  }, []);
+  useEffect(() => {
+    if (!restored.current) return;
+    try {
+      if (phase === "running") localStorage.setItem(RUN_KEY, JSON.stringify({ startedAt, breaks, note, spoken, stillDriving }));
+      else if (phase === "idle") localStorage.removeItem(RUN_KEY);
+    } catch { /* kept for this visit */ }
+  }, [phase, startedAt, breaks, note, spoken, stillDriving]);
+  function start(withNote?: string) { tick(); setSaved(null); setBreaks([]); setNote(withNote); setSpoken(undefined); setStillDriving(false); setStartedAt(Date.now()); setPhase("running"); }
+  function startUsual() {
+    const part = nextPart();
+    if (!part) { logUsualDay(); return; }
+    start(part.label); say(`${part.label} shift started. Usually done at ${part.end}.`);
+  }
+  // Logs the whole usual split day in one go, for days you forgot to press Start.
+  function logUsualDay() {
+    tick();
+    const id = Date.now(), minutes = usualDayMinutes;
+    const entry: RecentShift = { id, day: "Today", start: DAY_PARTS[0].start, end: DAY_PARTS[1].end, minutes, note: `${DAY_PARTS[0].start}–${DAY_PARTS[0].end} + ${DAY_PARTS[1].start}–${DAY_PARTS[1].end}` };
+    setRecent(list => [entry, ...list]); setWeekMinutes(total => total + minutes); setTodayMinutes(total => total + minutes); setChipPulse(p => p + 1);
+    say(`Usual day logged · ${hm(minutes)}`, { label: "Undo", onClick: () => { setRecent(list => list.filter(s => s.id !== id)); setWeekMinutes(total => total - minutes); setTodayMinutes(total => total - minutes); say("Removed"); } });
+  }
+  function toggleBreak() {
+    tick();
+    const open = breaks.some(b => !b.end);
+    setBreaks(list => open ? list.map(b => b.end ? b : { ...b, end: Date.now() }) : [...list, { start: Date.now() }]);
+    if (open) say("Back on the road");
+  }
+  function finish(at?: number, message?: string) {
+    tick();
+    // A finish can be backdated (auto-finish logs the usual end), so only break time inside
+    // [start, end] counts, and breaks after the end are dropped.
+    const end = at ?? Date.now(), id = end;
+    const overlap = (b: Break) => Math.max(0, Math.min(b.end ?? end, end) - Math.max(b.start, startedAt));
+    const breakMs = breaks.reduce((sum, b) => sum + overlap(b), 0);
+    const minutes = Math.max(1, Math.round((end - startedAt - breakMs) / 60000));
+    setBreaks(list => list.filter(b => b.start < end).map(b => ({ ...b, end: Math.min(b.end ?? end, end) })));
+    setEndedAt(end); setPhase("landing");
+    later(420, () => { setWeekMinutes(total => total + minutes); setTodayMinutes(total => total + minutes); setChipPulse(p => p + 1); });
+    const record = { minutes, startedAt, id, breaks };
+    // The hours actually worked, split at each break, so the timesheet shows them like the real export does.
+    const pieces: { start: string; end: string }[] = [];
+    let from = startedAt;
+    for (const b of [...breaks].sort((x, y) => x.start - y.start)) {
+      const bStart = Math.max(b.start, startedAt), bEnd = Math.min(b.end ?? end, end);
+      if (bEnd - bStart < 60_000) continue;
+      if (bStart - from >= 60_000) pieces.push({ start: clockTime(from), end: clockTime(bStart) });
+      from = Math.max(from, bEnd);
+    }
+    if (end - from >= 60_000 || !pieces.length) pieces.push({ start: clockTime(from), end: clockTime(end) });
+    later(1100, () => {
+      setPhase("idle"); setSaved(record);
+      say(message ?? `Shift saved · ${hm(minutes)} added`, { label: "Undo", onClick: () => undoShift(record) });
+      setRecent(list => [{ id, day: "Today", start: clockTime(startedAt), end: clockTime(end), minutes, pieces, note: [note, spoken].filter(Boolean).join(" · ") || undefined }, ...list]);
+    });
+    later(8000, () => setSaved(current => current?.id === id ? null : current));
+  }
+  // A tap on a reminder's button lands here: from the link it opened (?do=start) or a message from the service worker.
+  const fromReminder = useRef<(action: string) => void>(() => {});
+  useEffect(() => { fromReminder.current = action => {
+    if (action === "start") { if (phase === "running") say("Already on shift"); else { const part = nextPart(); start(part?.label); say(part ? `${part.label} shift started. Usually done at ${part.end}.` : "Shift started"); } }
+    else if (action === "finish") { if (phase === "running") finish(); else say("No shift is running"); }
+    else if (action === "still") { if (phase === "running") keepDriving(); else say("No shift is running"); }
+  }; });
+  useEffect(() => {
+    const params = new URLSearchParams(location.search), action = params.get("do");
+    if (action) { history.replaceState(null, "", location.pathname); window.setTimeout(() => fromReminder.current(action), 600); }
+    const onMessage = (event: MessageEvent) => { if (event.data?.type === "REMINDER_ACTION") fromReminder.current(String(event.data.action)); };
+    navigator.serviceWorker?.addEventListener("message", onMessage);
+    return () => navigator.serviceWorker?.removeEventListener("message", onMessage);
+  }, []);
+  /** "Forgot to start?": move the start back to when the run usually begins. */
+  function backdate(at: number, label: string) { setStartedAt(at); setBreaks(list => list.filter(b => b.start >= at)); say(`Start moved to ${label}`); }
+  function keepDriving() { setStillDriving(true); say("Got it. It won't finish on its own this run."); }
+  function autoFinish(at: number) { finish(at, `Finished on its own at ${clockTime(at)}`); }
+  function undoShift(record: { minutes: number; startedAt: number; id: number; breaks?: Break[] }) {
+    setWeekMinutes(total => total - record.minutes); setTodayMinutes(total => total - record.minutes);
+    setRecent(list => list.filter(shift => shift.id !== record.id));
+    setStartedAt(record.startedAt); setBreaks(record.breaks ?? []); setPhase("running"); setSaved(null);
+    say("Shift resumed");
+  }
+  function undoFinish() { if (saved) undoShift(saved); }
+
+  const [status, setStatus] = useState<WeekStatus>("reviewed");
+  const [statusPulse, setStatusPulse] = useState(0);
+  const [weekIndex, setWeekIndex] = useState(WEEKS.length - 1);
+  const [mark, setMark] = useState<DayMark>("worked");
+  function changeMark(next: DayMark) {
+    tick(); setMark(next);
+    say(next === "syg" ? "Today marked sick" : next === "fri" ? "Today marked as day off" : "Mark removed");
+  }
+  const timesheet = useTimesheet(recent, todayIndex, mark === "worked" ? "" : mark);
+  const [reviewing, setReviewing] = useState(false);
+  const weeks = WEEKS.map((week, index) => {
+    const days = week.days.map((d, i) => ({ ...d, minutes: Math.max(0, d.minutes - (removed[`${index}:${i}`] ?? 0)) }));
+    return index === WEEKS.length - 1 ? { ...week, days: days.map((d, i) => ({ ...d, minutes: i === todayIndex ? d.minutes + todayMinutes : d.minutes, today: i === todayIndex })) } : { ...week, days };
+  });
+  /** Takes a deleted shift's minutes out of the totals (sign 1), or puts them back on Undo (sign -1). */
+  function countShift(shift: RecentShift, sign: 1 | -1) {
+    const minutes = shift.minutes * sign;
+    if (shift.day === "Today") { setTodayMinutes(total => total - minutes); setWeekMinutes(total => total - minutes); return; }
+    const slot = slotOf(shift); if (!slot) return;
+    const key = `${slot.week}:${slot.day}`;
+    setRemoved(list => ({ ...list, [key]: (list[key] ?? 0) + minutes }));
+    if (slot.week === WEEKS.length - 1) setWeekMinutes(total => total - minutes);
+  }
+  function deleteShift(gone: RecentShift) {
+    setRecent(list => list.filter(s => s.id !== gone.id)); countShift(gone, 1);
+    setSaved(current => current?.id === gone.id ? null : current); // its "Undo finish" would take the minutes off twice
+    say("Shift deleted", { label: "Undo", onClick: () => { setRecent(list => [...list, gone].sort((a, b) => b.id - a.id)); countShift(gone, -1); say("Shift restored"); } });
+  }
+  const weekDays: DayBar[] = weeks[WEEKS.length - 1].days.map((d, i) => ({ short: d.short, minutes: d.minutes, today: i === todayIndex, mark: i === todayIndex && mark !== "worked" ? (mark === "syg" ? "Syg" : "Fri") : undefined }));
+  const [editing, setEditing] = useState<RecentShift | null>(null);
+  // A sheet covers the bottom of the screen, so an older message (like "Shift saved · Undo") would sit on top of its fields. Clear it when one opens.
+  const sheetOpen = reviewing || !!editing;
+  useEffect(() => { if (sheetOpen) setToast(null); }, [sheetOpen]);
+  const lastEditing = useRef<RecentShift | null>(null);
+  if (editing) lastEditing.current = editing;
+  const sheetShift = editing ?? lastEditing.current;
+
+  // Voice notes: Gemini writes down what you say. On shift it goes with the shift; otherwise on the last one.
+  function needKey() { say("Paste your Gemini key in Lab first", { label: "Open Lab", onClick: () => changeTab("lab") }); }
+  const voice = useVoice({
+    apiKey: geminiKey,
+    onText: text => {
+      if (phase === "running") setSpoken(current => current ? `${current} · ${text}` : text);
+      else setRecent(list => list.map((shift, i) => i === 0 ? { ...shift, note: [shift.note, text].filter(Boolean).join(" · ") } : shift));
+      say(`Note added: ${text}`);
+    },
+    onError: message => message.startsWith("Paste your Gemini key") ? needKey() : say(message),
+  });
+
+  // What "Ask your hours" and the payslip check know: every logged day with its date.
+  const FIRST_MONDAY = Date.UTC(2026, 9, 26);
+  const isoDay = (week: number, day: number) => new Date(FIRST_MONDAY + (week * 7 + day) * 86400000).toISOString().slice(0, 10);
+  const loggedDays = () => weeks.flatMap((week, w) => week.days.map((d, i) => ({ date: isoDay(w, i), minutes: d.minutes })));
+  function hoursContext() {
+    const days = loggedDays();
+    return [
+      `Today is ${new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Europe/Copenhagen" }).format(Date.now())}.`,
+      `Hourly pay ${RATE} kr before tax. Weekly goal 37:00. Logged days start ${days[0].date}; earlier days are not in the app.`,
+      `Usual split shift: ${DAY_PARTS.map(p => `${p.label} ${p.start}-${p.end}`).join(", ")}.`,
+      "Days (date: hours worked):",
+      ...days.map(d => `${d.date} ${new Date(`${d.date}T12:00:00Z`).toLocaleDateString("en-GB", { weekday: "short" })}: ${hm(d.minutes)}`),
+      "Recent shifts:",
+      ...recent.map(r => `${r.day} ${r.start}-${r.end} (${hm(r.minutes)})${r.note ? `, note: ${r.note}` : ""}`),
+      phase === "running" ? `A shift is running since ${clockTime(startedAt)}.` : "",
+    ].filter(Boolean).join("\n");
+  }
+  function logged(from: string, to: string): Logged {
+    const days = loggedDays().filter(d => d.date >= from && d.date <= to);
+    return { minutes: days.reduce((sum, d) => sum + d.minutes, 0), from: days[0]?.date ?? null };
+  }
+
+  const running = phase === "running";
+  return <LazyMotion features={domMax}>
+    <MotionConfig reducedMotion={reduce ? "always" : "user"}>
+      <div className={`look ${styles.lab}`} data-look={look} data-font={font} data-state={running ? "running" : "idle"} data-blur={blur ? "on" : "off"} data-motion={reduce ? "reduced" : "full"} style={{ ["--number-weight" as string]: weight }}>
+        <Wallpaper scene={sceneId} state={running && !breaks.some(b => !b.end) ? "running" : "idle"}/>
+        <div className={styles.pages}>
+        <AnimatePresence initial={true} custom={direction}>
+          {mounted && <m.main key={tab} className={styles.page} custom={direction} variants={screen} initial={opened ? "enter" : "hidden"} animate="show" exit="leave">
+            {tab === "today" && <Today phase={phase} startedAt={startedAt} endedAt={endedAt} weekMinutes={weekMinutes} todayMinutes={todayMinutes} chipPulse={chipPulse} dateLabel={dateLabel}
+              recent={recent} mic={voice.mic} level={voice.level} micSeconds={voice.seconds}
+              layout={layout} note={note} breaks={breaks} weekDays={weekDays} onBreak={toggleBreak} onStartUsual={startUsual} onLogUsualDay={logUsualDay} dayOff={mark !== "worked"} stillDriving={stillDriving} onStillDriving={keepDriving} onAutoFinish={autoFinish} travel={travel}
+              onUndo={undoFinish} onStart={() => start()} onFinish={() => finish()} onFastForward={() => { setStartedAt(value => value - 3_600_000); setBreaks(list => list.map(b => ({ start: b.start - 3_600_000, end: b.end && b.end - 3_600_000 }))); }} onMic={voice.toggle} onBackdate={backdate}
+              onAddPast={() => setEditing({ id: -1, day: "New", start: "06:00", end: "14:00", minutes: 480 })} onOpenShift={setEditing} onSettings={() => changeTab("lab")}/>}
+
+            {tab === "week" && <>
+              <m.header variants={item} className={styles.top}>
+                <div><p className={styles.eyebrow}>Week 46 · 9 – 15 Nov</p><h1 className={`${styles.title} serif`}>Your week</h1></div>
+              </m.header>
+              <m.section variants={item}><Glass blur className={styles.card}><WeekStrip weeks={weeks} index={weekIndex} onIndex={setWeekIndex}/></Glass></m.section>
+              <m.section variants={item}>
+                <Glass blur className={styles.card}>
+                  <div className={styles.cardHead}><h2 className={`${styles.cardTitle} serif`}>Today was</h2><span className={styles.cardMeta}>Goes on the timesheet</span></div>
+                  <SegmentedControl label="Mark today" value={mark} onChange={changeMark} options={[{ value: "worked", label: "Worked" }, { value: "syg", label: "Sick" }, { value: "fri", label: "Day off" }]}/>
+                </Glass>
+              </m.section>
+              <m.section variants={item}>
+                <Glass blur className={styles.card}>
+                  <div className={styles.cardHead}><h2 className={`${styles.cardTitle} serif`}>Timesheet</h2><StatusPill status={status} pulse={statusPulse}/></div>
+                  <div className={styles.sendTotals}>
+                    <div><p className={styles.statLabel}>Worked</p><p className={`${styles.sendBig} numeric`}>{hm(timesheet.total)}</p></div>
+                    <div><p className={styles.statLabel}>Days</p><p className={`${styles.sendBig} numeric`}>{timesheet.shifts}</p></div>
+                  </div>
+                  <Button variant="primary" icon={<FileSpreadsheet/>} onClick={() => { tick(); setReviewing(true); }}>{status === "sent" ? "See what was sent" : "Review & send"}</Button>
+                  <p className={styles.hint}>See the Excel sheet and the email before it goes. Fix any day right there.</p>
+                </Glass>
+              </m.section>
+              <m.section variants={item}><AskCard apiKey={geminiKey} context={hoursContext} say={say} onNeedKey={needKey}/></m.section>
+              <m.section variants={item}><PayslipCard apiKey={geminiKey} logged={logged} say={say} onNeedKey={needKey}/></m.section>
+              <m.p variants={item} className={styles.hint}>Swipe the bars sideways to change week. Sending is the one thing you can&apos;t undo, so you hold it.</m.p>
+            </>}
+
+            {tab === "lab" && <>
+              <m.header variants={item} className={styles.top}>
+                <div><p className={styles.eyebrow}>Headlight lab</p><h1 className={`${styles.title} serif`}>Tune the look</h1></div>
+              </m.header>
+              <m.section variants={item}><Reminders say={say} travel={travel} onTravel={setTravel}/></m.section>
+              <m.section variants={item}><GeminiCard apiKey={geminiKey} onSave={setGeminiKey} say={say}/></m.section>
+              <m.section variants={item}>
+                <Glass blur className={styles.card}>
+                  <div className={styles.cardHead}><h2 className={`${styles.cardTitle} serif`}>Layout and font</h2></div>
+                  <SegmentedControl label="Today layout" value={layout} onChange={changeLayout} options={LAYOUTS}/>
+                  <p className={styles.hint}>{layout === "focus" ? "One screen, no scrolling. Start sits by your thumb." : layout === "card" ? "One glass card, like a phone widget." : layout === "bento" ? "Small tiles: week, today, break, finish time." : "The sky stays open; everything sits on one sheet."}</p>
+                  <Row label="Font" hint={font === "modern" ? "Plus Jakarta Sans: warm and premium" : font === "clean" ? "Inter Tight: crisp, like iOS" : font === "character" ? "Bricolage: bold, with personality" : "Fraunces: serif titles, magazine feel"}><SegmentedControl label="Font" value={font} onChange={changeFont} options={FONTS}/></Row>
+                  <Button variant="glass" size="small" onClick={() => changeTab("today")}>See it on Today</Button>
+                </Glass>
+              </m.section>
+              <m.section variants={item}>
+                <Glass blur className={styles.card}>
+                  <div className={styles.cardHead}><h2 className={`${styles.cardTitle} serif`}>Wallpaper</h2><span className={styles.cardMeta}>Warms up on shift</span></div>
+                  <Row label="Follow the time of day" hint={choice === "auto" ? `Now: ${scene.name}` : "Dawn, day, dusk and night"}><Toggle label="Follow the time of day" checked={choice === "auto"} onChange={on => changeScene(on ? "auto" : sceneId)}/></Row>
+                  <div className={styles.picker} role="radiogroup" aria-label="Wallpaper">
+                    {SCENES.map(option => {
+                      const selected = choice === option.id;
+                      return <m.button key={option.id} type="button" role="radio" aria-checked={selected} className={styles.pick} onClick={() => changeScene(option.id)} whileTap={{ scale: 0.95 }} transition={spring.tap}>
+                        <span className={styles.thumb}><Wallpaper thumb scene={option.id} state="idle"/></span>
+                        {selected && <m.span layoutId="wallpaper-ring" className={styles.ring} transition={spring.snappy}><Check aria-hidden="true"/></m.span>}
+                        <span className={styles.pickName}>{option.name}</span>
+                      </m.button>;
+                    })}
+                  </div>
+                </Glass>
+              </m.section>
+              <m.section variants={item}>
+                <Glass blur className={styles.card}>
+                  <Row label="Number weight" hint="Check 200 outside in daylight"><SegmentedControl label="Number weight" value={weight} onChange={setWeight} options={[{ value: "200", label: "200" }, { value: "300", label: "300" }]}/></Row>
+                  <Row label="Live blur" hint="Off saves battery"><Toggle label="Live blur" checked={blur} onChange={setBlur}/></Row>
+                  <Row label="Reduce motion" hint="How it feels turned down"><Toggle label="Reduce motion" checked={reduce} onChange={setReduce}/></Row>
+                  <Row label="Haptics" hint="A tick on Start, Finish and Send"><Toggle label="Haptics" checked={haptics} onChange={setHapticsOn}/></Row>
+                </Glass>
+              </m.section>
+              <m.section variants={item}>
+                <Glass blur className={styles.card}>
+                  <div className={styles.cardHead}><h2 className={`${styles.cardTitle} serif`}>Messages</h2></div>
+                  <p className={styles.hint}>Show one, then replace it while it&apos;s up. It reshapes instead of stacking. Swipe it away.</p>
+                  <div className={styles.inline}>
+                    <Button variant="glass" size="small" onClick={() => say("Backup saved on this phone")}>Show a message</Button>
+                    <Button variant="glass" size="small" onClick={() => say("Shift deleted", { label: "Undo", onClick: () => say("Shift restored") })}>Replace it</Button>
+                  </div>
+                </Glass>
+              </m.section>
+              <m.section variants={item}>
+                <Glass blur className={styles.card}>
+                  <div className={styles.cardHead}><h2 className={`${styles.cardTitle} serif`}>The six springs</h2></div>
+                  <p className={styles.hint}>Every movement uses one of these. Tap a row to feel it.</p>
+                  <div className={styles.springs}>{(Object.keys(springSpec) as SpringName[]).map(name => <SpringRow key={name} name={name}/>)}</div>
+                </Glass>
+              </m.section>
+              <m.footer variants={item} className={styles.footer}>
+                <p className="serif">How does it feel now?</p>
+                <p>Rate it 1 to 10 again, and tell me which wallpaper you kept.</p>
+              </m.footer>
+            </>}
+          </m.main>}
+        </AnimatePresence>
+        </div>
+
+        <TabBar value={tab} onChange={changeTab} tabs={[{ id: "today", label: "Today", icon: <Sun/> }, { id: "week", label: "Week", icon: <CalendarDays/> }, { id: "lab", label: "Lab", icon: <FlaskConical/> }]}/>
+
+        <Sheet open={!!editing} onClose={() => setEditing(null)} title={sheetShift?.id === -1 ? "Add a past shift" : `${sheetShift?.day ?? ""}'s shift`} footer={<>
+          {sheetShift?.id !== -1 && <Button variant="danger" icon={<Trash2/>} onClick={() => { const gone = editing; setEditing(null); if (gone) deleteShift(gone); }}>Delete</Button>}
+          <Button variant="primary" onClick={() => { setEditing(null); say(sheetShift?.id === -1 ? "Shift added" : "Shift updated"); }}>Save</Button>
+        </>}>
+          <div className={styles.form}>
+            <label className={styles.field}><span>Started</span><input type="time" defaultValue={sheetShift?.start.slice(-5) ?? "06:00"}/></label>
+            <label className={styles.field}><span>Finished</span><input type="time" defaultValue={sheetShift?.end.slice(-5) ?? "14:00"}/></label>
+            <label className={`${styles.field} ${styles.wide}`}><span>Note</span><textarea rows={3} defaultValue={sheetShift?.note ?? ""} placeholder="Route, bus, anything worth remembering"/></label>
+          </div>
+        </Sheet>
+        <ReviewSheet open={reviewing} onClose={() => setReviewing(false)} sheet={timesheet} sent={status === "sent"} say={say}
+          onSent={() => { setStatus("sent"); setStatusPulse(p => p + 1); }} onEdited={() => { if (status === "sent") { setStatus("changed"); setStatusPulse(0); } }}/>
+        <Toast message={toast} onDismiss={() => setToast(null)}/>
+      </div>
+    </MotionConfig>
+  </LazyMotion>;
+}
+
+function Row({ label, hint, children }: { label: string; hint: string; children: ReactNode }) {
+  return <div className={styles.row}><div><p>{label}</p><p className={styles.small}>{hint}</p></div>{children}</div>;
+}
+
+function SpringRow({ name }: { name: SpringName }) {
+  const track = useRef<HTMLSpanElement>(null);
+  const [x, setX] = useState(0);
+  const spec = springSpec[name];
+  return <button type="button" className={styles.springRow} onClick={() => { const width = track.current?.clientWidth ?? 0; setX(current => current ? 0 : Math.max(0, width - 18)); }}>
+    <span className={styles.springText}>
+      <span className={styles.springName}>{name}</span>
+      <span className={`${styles.small} numeric`}>{spec.duration.toFixed(2)} s{spec.bounce ? ` · bounce ${spec.bounce}` : ""}</span>
+    </span>
+    <span ref={track} className={styles.springTrack}><m.span className={styles.springDot} animate={{ x }} transition={spring[name]}/></span>
+  </button>;
+}

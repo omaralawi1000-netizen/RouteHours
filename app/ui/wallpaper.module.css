@@ -1,0 +1,63 @@
+.wall {
+  /* Top-anchored and as tall as the screen with Chrome's bars hidden, so it never resizes mid-scroll. */
+  position: fixed; top: 0; left: 0; width: 100%; height: 100vh; height: 100lvh; z-index: 0; overflow: hidden; pointer-events: none; contain: strict;
+  background: linear-gradient(180deg, var(--sky-top) 0%, var(--sky-mid) 46%, var(--horizon) 78%, var(--horizon) 100%);
+  transition: --sky-top 1.2s ease, --sky-mid 1.2s ease, --horizon 1.2s ease, --ember 1.2s ease, --aura 1.2s ease, --aura-2 1.2s ease,
+    --hill-far 1.2s ease, --hill-mid 1.2s ease, --hill-near 1.2s ease;
+}
+.sky { position: absolute; inset: -10% -20% 0; }
+.blob { position: absolute; border-radius: 50%; will-change: transform; }
+/* Scrolling already moves the glass over the sky; holding the light still keeps each frame cheap. */
+.wall[data-hold] .blob { animation-play-state: paused; }
+/* The warm light behind the hills */
+.b1 { width: 150vmax; height: 64vmax; left: 50%; top: 66%; margin: -32vmax 0 0 -75vmax; background: radial-gradient(closest-side, var(--ember), transparent); opacity: 0.9; animation: drift1 26s ease-in-out infinite alternate; }
+/* A cooler aura high in the sky */
+.b2 { width: 110vmax; height: 90vmax; left: -30vmax; top: -40vmax; background: radial-gradient(closest-side, var(--aura), transparent); opacity: 0.75; animation: drift2 32s ease-in-out infinite alternate; }
+.b3 { width: 90vmax; height: 70vmax; right: -40vmax; top: 4vmax; background: radial-gradient(closest-side, var(--aura-2, var(--aura)), transparent); opacity: 0.55; animation: drift3 38s ease-in-out infinite alternate; }
+@keyframes drift1 { to { transform: translate3d(6vmax, -3vmax, 0) scale(1.08); } }
+@keyframes drift2 { to { transform: translate3d(14vmax, 8vmax, 0) scale(1.12); } }
+@keyframes drift3 { to { transform: translate3d(-12vmax, 6vmax, 0) scale(0.92); } }
+.stars { position: absolute; inset: 0 0 50%; opacity: 0; background-image: radial-gradient(1px 1px at 12% 18%, #fff, transparent), radial-gradient(1px 1px at 32% 8%, #fff, transparent), radial-gradient(1.2px 1.2px at 58% 22%, #fff, transparent), radial-gradient(1px 1px at 76% 12%, #fff, transparent), radial-gradient(1px 1px at 88% 30%, #fff, transparent), radial-gradient(1px 1px at 22% 34%, #fff, transparent), radial-gradient(1.2px 1.2px at 46% 40%, #fff, transparent), radial-gradient(1px 1px at 68% 36%, #fff, transparent); transition: opacity 1.4s ease; }
+.wall[data-stars="on"] .stars { opacity: 0.8; }
+.wall[data-stars="on"][data-state="running"] .stars { opacity: 0.45; }
+/* Overflow is visible so a scene can hang its moon high in the sky, above the hills. */
+.hills { position: absolute; left: 0; right: 0; bottom: -70px; width: 100%; height: calc(56% + 70px); overflow: visible; will-change: transform; }
+.far { fill: var(--hill-far); }
+.haze { fill: var(--horizon); opacity: 0.32; }
+.mid { fill: var(--hill-mid); }
+.near { fill: var(--hill-near); }
+.road { fill: none; stroke: #FFE2B8; stroke-linecap: round; opacity: 0.5; stroke-width: 1.4; stroke-dasharray: 2 5; }
+.lake { fill: var(--hill-mid); opacity: 0.85; }
+.sea { fill: var(--hill-mid); opacity: 0.75; }
+.sun { fill: #FFF1DA; filter: drop-shadow(0 0 18px rgb(255 214 160 / 0.9)); }
+.moon { fill: #F4F1E6; filter: drop-shadow(0 0 14px rgb(220 230 255 / 0.8)); }
+.waves path, .waves { fill: none; stroke: rgb(255 255 255 / 0.45); stroke-width: 1.4; stroke-linecap: round; }
+.glint { fill: none; stroke: #FFF4E0; stroke-width: 2; stroke-linecap: round; opacity: 0.8; }
+.moonPath { fill: none; stroke: rgb(240 240 255 / 0.55); stroke-width: 1.6; stroke-linecap: round; opacity: 0.8; }
+.mist { fill: var(--horizon); opacity: 0.45; }
+.ribbon { fill: none; stroke-width: 26; stroke-linecap: round; opacity: 0.55; filter: blur(10px); }
+.ribbonSlow { stroke-width: 34; opacity: 0.4; }
+.windows rect { fill: #FFD58A; opacity: 0.75; animation: flicker 7s steps(1) infinite; }
+@keyframes flicker { 0%, 100% { opacity: 0.8; } 40% { opacity: 0.25; } 70% { opacity: 0.9; } }
+.roadLine { fill: none; stroke: #FFD58A; stroke-width: 1.4; stroke-dasharray: 10 12; opacity: 0.45; }
+/* The lane lines only roll while you drive. */
+.wall[data-state="running"] .roadLine { animation: lane 0.9s linear infinite; opacity: 0.75; }
+.wall[data-state="running"][data-hold] .roadLine { animation-play-state: paused; }
+@keyframes lane { to { stroke-dashoffset: -22; } }
+.thumb { position: absolute; border-radius: inherit; }
+.thumb .blob, .thumb .windows rect, .thumb .roadLine { animation: none; }
+.thumb .grain { display: none; }
+/* Only drawn while you drive (its motion path repaints every frame), so it fades in on start. */
+.headlight { animation: lampIn 0.8s ease both; }
+@keyframes lampIn { from { opacity: 0; } }
+.lamp { fill: #FFF3D6; }
+.beam { fill: rgb(255 196 110 / 0.35); }
+.grain { position: absolute; inset: 0; opacity: calc(var(--grain, 0.07) * 0.6); background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.5  0 0 0 0 0.5  0 0 0 0 0.5  0 0 0 1.2 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"); }
+@media (prefers-reduced-motion: reduce) { .blob, .windows rect, .roadLine { animation: none !important; } .headlight { display: none; } }
+:global([data-motion="reduced"]) :is(.blob, .windows rect, .roadLine) { animation: none !important; }
+:global([data-motion="reduced"]) .headlight { display: none; }
+/* In a small preview, size the light by the box rather than the screen. */
+.thumb .hills { bottom: 0; height: 58%; }
+.thumb .b1 { width: 300%; height: 70%; left: -100%; top: 42%; margin: 0; }
+.thumb .b2 { width: 220%; height: 100%; left: -80%; top: -45%; }
+.thumb .b3 { width: 180%; height: 80%; right: -90%; top: 0; }

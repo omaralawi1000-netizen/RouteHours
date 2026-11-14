@@ -1,0 +1,21 @@
+.strip { display: flex; flex-direction: column; gap: 14px; }
+.head { display: flex; align-items: center; gap: 4px; }
+.titles { flex: 1; overflow: hidden; height: 44px; position: relative; }
+.titleRow { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.15; }
+.label { font-size: 13px; color: var(--text-2); }
+.total { font-size: 22px; font-weight: 300; letter-spacing: -0.01em; }
+.arrow { width: var(--tap-min); height: var(--tap-min); display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 999px; background: transparent; color: var(--text-2); cursor: pointer; }
+.arrow:active:not(:disabled) { background: var(--press); }
+.arrow:disabled { opacity: 0.25; cursor: default; }
+.arrow svg { width: 20px; height: 20px; }
+.track { overflow: visible; touch-action: pan-y; cursor: grab; }
+.track:active { cursor: grabbing; }
+.days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+.day { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.barSlot { width: 100%; height: 96px; display: flex; align-items: flex-end; justify-content: center; }
+.bar { width: 60%; max-width: 22px; height: 100%; border-radius: 6px; background: var(--text-3); opacity: 0.55; transform-origin: bottom; will-change: transform; }
+.today .bar { background: var(--accent); opacity: 1; }
+.dayName { font-size: 12px; color: var(--text-2); font-weight: 500; }
+.today .dayName { color: var(--text); }
+.hours { font-size: 12px; color: var(--text-3); }
+.today .hours { color: var(--text); }

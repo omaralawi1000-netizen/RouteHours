@@ -1,4 +1,5 @@
 import { cachedGoogleAccount, savedGoogleEmail, rememberGoogleAccount, clearGoogleSession, type GoogleService } from './google-session.ts';
+import { connectGoogle, googleSecret, grantedServices, refreshGoogle, type OfflineAccount } from './google-offline.ts';
 
 export const GOOGLE_EMAIL_SCOPE = "https://www.googleapis.com/auth/userinfo.email";
 export const GOOGLE_FILE_SCOPE = "https://www.googleapis.com/auth/drive.file";
@@ -109,13 +110,29 @@ export async function readGoogleEmail(token: string, signal?: AbortSignal): Prom
 export async function authorizeGoogleAccount(clientId: string, service: GoogleService, scopes: string[], options: {forceAccountChoice?:boolean;signal?:AbortSignal} = {}): Promise<GoogleAccount> {
   const id = normalizeGoogleClientId(clientId);
   if(options.signal?.aborted) throw new Error('Google connection cancelled.');
-  if(!options.forceAccountChoice) {const cached=cachedGoogleAccount(id,service);if(cached)return cached;}
+  if(!options.forceAccountChoice) {
+    const cached=cachedGoogleAccount(id,service);if(cached)return cached;
+    // Signed in to stay: a fresh hour of access from the server, with no Google window.
+    const refreshed=await refreshGoogle(id,service,options.signal);if(refreshed)return rememberGoogleGrant(id,service,refreshed);
+    // Closed while the refresh was pending: never open a Google window for a screen that's gone.
+    if(options.signal?.aborted) throw new Error('Google connection cancelled.');
+  }
   else clearGoogleSession(id,service);
   const email = options.forceAccountChoice ? '' : savedGoogleEmail(id,service);
+  const secret = googleSecret(id);
+  if(secret) return rememberGoogleGrant(id,service,await connectGoogle(id,secret,{loginHint:email||undefined,chooseAccount:options.forceAccountChoice,signal:options.signal}));
   const grant = await requestGoogleToken(id,scopes,{signal:options.signal,prompt:email?'':'select_account',loginHint:email||undefined});
   const account = {...grant,email:await readGoogleEmail(grant.token,options.signal)};
   if(options.signal?.aborted) throw new Error('Google connection cancelled.');
   rememberGoogleAccount(id,service,account);
+  return account;
+}
+/** One code sign-in covers every service it was granted, so Sheets, backups and Gmail all pick it up. */
+export function rememberGoogleGrant(clientId: string, service: GoogleService, fresh: OfflineAccount): GoogleAccount {
+  const account = { token: fresh.token, email: fresh.email, expires: fresh.expires };
+  const services = grantedServices(fresh.scope);
+  for (const each of services) rememberGoogleAccount(clientId, each, account);
+  if (!services.includes(service)) throw new Error("The required Google permissions were not granted. Connect again and approve the permissions for this action.");
   return account;
 }
 export function googleAccount(clientId: string, options: {forceAccountChoice?:boolean} = {}): Promise<GoogleAccount> {

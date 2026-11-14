@@ -2310,3 +2310,6 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
   .settings-body>div:not([hidden]),.timer-card.is-active{animation:none}
   .provider-disclosure>summary>svg{transition:none}
 }
+
+/* Stay signed in (Google) */
+.google-stay{display:flex;flex-direction:column;gap:10px;margin-top:6px;padding-top:14px;border-top:1px solid var(--line)}
