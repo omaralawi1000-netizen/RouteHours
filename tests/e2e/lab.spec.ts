@@ -14,6 +14,24 @@ test("lab: a shift starts, finishes into the week, and can be undone", async ({ 
   await expect(page.getByRole("button", { name: "Finish shift" })).toBeVisible();
 });
 
+test("lab: deleting a shift takes its hours off the week, and Undo puts them back", async ({ page }) => {
+  await page.route(url => !["127.0.0.1", "localhost"].includes(url.hostname), route => route.abort());
+  await page.goto("/lab");
+  await expect(page.locator(`[aria-label="15:07 worked this week"]`)).toBeVisible();
+  await page.getByRole("button", { name: "Edit Tuesday's shift" }).click();
+  await page.getByRole("dialog", { name: "Tuesday's shift" }).getByRole("button", { name: "Delete" }).click();
+  await expect(page.locator(`[aria-label="7:45 worked this week"]`)).toBeVisible();
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(page.locator(`[aria-label="15:07 worked this week"]`)).toBeVisible();
+  // Delete it again: the Week bars and the timesheet agree with Today.
+  await page.getByRole("button", { name: "Edit Tuesday's shift" }).click();
+  await page.getByRole("dialog", { name: "Tuesday's shift" }).getByRole("button", { name: "Delete" }).click();
+  await page.getByRole("button", { name: "Week", exact: true }).click();
+  await expect(page.getByRole("img", { name: /^M 7\.8 hours, T 0 hours/ }).first()).toBeVisible();
+  await page.getByRole("button", { name: "Review & send" }).click();
+  await expect(page.getByRole("dialog", { name: "Review & send" }).getByText("7:45 worked", { exact: false })).toBeVisible();
+});
+
 test("lab: the sheet closes with Escape and with Back", async ({ page }) => {
   await page.goto("/lab");
   await page.getByRole("button", { name: "Edit Tuesday's shift" }).click();

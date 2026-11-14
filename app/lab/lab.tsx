@@ -40,6 +40,15 @@ const RECENT: RecentShift[] = [
   { id: 1, day: "Last week", start: "Fri 06:00", end: "13:20", minutes: 440 },
 ];
 
+/** Where a demo shift sits in WEEKS, as "week:day". "Today" has no fixed slot: it lives in todayMinutes. */
+const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+function slotOf(shift: RecentShift): { week: number; day: number } | null {
+  const day = DAY_NAMES.indexOf(shift.day);
+  if (day >= 0) return { week: WEEKS.length - 1, day };
+  const short = shift.day === "Last week" ? DAY_NAMES.findIndex(name => shift.start.startsWith(name.slice(0, 3))) : -1;
+  return short >= 0 ? { week: WEEKS.length - 2, day: short } : null;
+}
+
 type DayMark = "worked" | "syg" | "fri";
 const SCENE_KEY = "routehours:lab-wallpaper";
 const LAYOUT_KEY = "routehours:lab-layout-v4";
@@ -80,6 +89,8 @@ export default function Lab() {
   const [todayMinutes, setTodayMinutes] = useState(0);
   const [chipPulse, setChipPulse] = useState(0);
   const [recent, setRecent] = useState(RECENT);
+  // Minutes taken off a seeded day by deleting its shift, keyed "week:day", so the bars and totals follow a delete.
+  const [removed, setRemoved] = useState<Record<string, number>>({});
   const [saved, setSaved] = useState<{ minutes: number; startedAt: number; id: number; breaks?: Break[] } | null>(null);
   const timers = useRef<number[]>([]);
   const later = (ms: number, run: () => void) => { timers.current.push(window.setTimeout(run, ms)); };
@@ -242,7 +253,24 @@ export default function Lab() {
   }
   const timesheet = useTimesheet(recent, todayIndex, mark === "worked" ? "" : mark);
   const [reviewing, setReviewing] = useState(false);
-  const weeks = WEEKS.map((week, index) => index === WEEKS.length - 1 ? { ...week, days: week.days.map((d, i) => ({ ...d, minutes: i === todayIndex ? d.minutes + todayMinutes : d.minutes, today: i === todayIndex })) } : week);
+  const weeks = WEEKS.map((week, index) => {
+    const days = week.days.map((d, i) => ({ ...d, minutes: Math.max(0, d.minutes - (removed[`${index}:${i}`] ?? 0)) }));
+    return index === WEEKS.length - 1 ? { ...week, days: days.map((d, i) => ({ ...d, minutes: i === todayIndex ? d.minutes + todayMinutes : d.minutes, today: i === todayIndex })) } : { ...week, days };
+  });
+  /** Takes a deleted shift's minutes out of the totals (sign 1), or puts them back on Undo (sign -1). */
+  function countShift(shift: RecentShift, sign: 1 | -1) {
+    const minutes = shift.minutes * sign;
+    if (shift.day === "Today") { setTodayMinutes(total => total - minutes); setWeekMinutes(total => total - minutes); return; }
+    const slot = slotOf(shift); if (!slot) return;
+    const key = `${slot.week}:${slot.day}`;
+    setRemoved(list => ({ ...list, [key]: (list[key] ?? 0) + minutes }));
+    if (slot.week === WEEKS.length - 1) setWeekMinutes(total => total - minutes);
+  }
+  function deleteShift(gone: RecentShift) {
+    setRecent(list => list.filter(s => s.id !== gone.id)); countShift(gone, 1);
+    setSaved(current => current?.id === gone.id ? null : current); // its "Undo finish" would take the minutes off twice
+    say("Shift deleted", { label: "Undo", onClick: () => { setRecent(list => [...list, gone].sort((a, b) => b.id - a.id)); countShift(gone, -1); say("Shift restored"); } });
+  }
   const weekDays: DayBar[] = weeks[WEEKS.length - 1].days.map((d, i) => ({ short: d.short, minutes: d.minutes, today: i === todayIndex, mark: i === todayIndex && mark !== "worked" ? (mark === "syg" ? "Syg" : "Fri") : undefined }));
   const [editing, setEditing] = useState<RecentShift | null>(null);
   // A sheet covers the bottom of the screen, so an older message (like "Shift saved · Undo") would sit on top of its fields. Clear it when one opens.
@@ -395,7 +423,7 @@ export default function Lab() {
         <TabBar value={tab} onChange={changeTab} tabs={[{ id: "today", label: "Today", icon: <Sun/> }, { id: "week", label: "Week", icon: <CalendarDays/> }, { id: "lab", label: "Lab", icon: <FlaskConical/> }]}/>
 
         <Sheet open={!!editing} onClose={() => setEditing(null)} title={sheetShift?.id === -1 ? "Add a past shift" : `${sheetShift?.day ?? ""}'s shift`} footer={<>
-          {sheetShift?.id !== -1 && <Button variant="danger" icon={<Trash2/>} onClick={() => { const gone = editing; setEditing(null); if (gone) { setRecent(list => list.filter(s => s.id !== gone.id)); say("Shift deleted", { label: "Undo", onClick: () => { setRecent(list => [...list, gone].sort((a, b) => b.id - a.id)); say("Shift restored"); } }); } }}>Delete</Button>}
+          {sheetShift?.id !== -1 && <Button variant="danger" icon={<Trash2/>} onClick={() => { const gone = editing; setEditing(null); if (gone) deleteShift(gone); }}>Delete</Button>}
           <Button variant="primary" onClick={() => { setEditing(null); say(sheetShift?.id === -1 ? "Shift added" : "Shift updated"); }}>Save</Button>
         </>}>
           <div className={styles.form}>
