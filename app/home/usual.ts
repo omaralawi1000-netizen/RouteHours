@@ -25,7 +25,9 @@ export const dayMinutes = (parts: DayPart[]) => parts.reduce((sum, p) => sum + p
 export function nextPart(parts: DayPart[], now: number): DayPart | null {
   for (let i = 0; i < parts.length; i++) {
     const part = parts[i], following = parts[i + 1];
-    const cutoff = following ? (toMinutes(part.end) + toMinutes(following.start)) / 2 : toMinutes(part.end) - 45;
+    // Start plus length, so an overnight part (22:00–06:00) ends at 30:00, not 06:00.
+    const end = toMinutes(part.start) + part.minutes;
+    const cutoff = following ? (end + toMinutes(following.start)) / 2 : end - 45;
     if (now < cutoff) return part;
   }
   return null;
