@@ -28,6 +28,10 @@ export function remindersFor(parts: DayPart[], travel: number): Reminder[] {
   return list.sort((a, b) => a.time.localeCompare(b.time));
 }
 
+/** The reminder list this phone last sent to the server. */
+const SYNC_KEY = "routehours:reminders-synced";
+function readSynced() { try { return localStorage.getItem(SYNC_KEY) ?? ""; } catch { return ""; } }
+function writeSynced(list: string) { try { localStorage.setItem(SYNC_KEY, list); } catch { /* sent again next time */ } }
 /** Kept from the lab, so a phone that already turned reminders on stays on. */
 const KEY = "routehours:lab-reminders";
 
@@ -67,6 +71,7 @@ export default function Reminders({ say, travel, onTravel, parts, zone }: { say:
       if (server?.store) {
         const res = await fetch("/api/push/subscribe", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ subscription: sub.toJSON(), reminders: remindersFor(parts, travel), days: [1, 2, 3, 4, 5], zone }) });
         if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? "Couldn't save the reminders.");
+        writeSynced(list); synced.current = list;
         say("Reminders on, Monday to Friday");
       } else say("This phone is ready. Daily reminders start once storage is set up.");
       try { localStorage.setItem(KEY, "on"); } catch { /* still on for now */ }
@@ -74,14 +79,17 @@ export default function Reminders({ say, travel, onTravel, parts, zone }: { say:
     } catch (error) { setState("off"); say(error instanceof Error ? error.message : "Couldn't turn reminders on"); }
   }
 
-  // A new trip length re-saves this phone's list, so the server sends the new leave time.
+  // The server keeps this phone's list. Whenever the list here differs from the one last sent (a new
+  // trip length, new usual shifts or zone, also changed from the classic screens), it is sent again.
   const list = JSON.stringify([remindersFor(parts, travel), zone]);
-  const synced = useRef(list);
+  const synced = useRef<string | null>(null);
+  if (synced.current === null) synced.current = readSynced();
   useEffect(() => {
     if (synced.current === list || state !== "on" || !server?.store) return;
     synced.current = list;
     subscription(false).then(sub => sub && fetch("/api/push/subscribe", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ subscription: sub.toJSON(), reminders: remindersFor(parts, travel), days: [1, 2, 3, 4, 5], zone }) }))
-      .then(res => { if (res && !res.ok) say("Couldn't update the reminder times on the server"); }).catch(() => say("Couldn't update the reminder times on the server"));
+      .then(res => { if (res && !res.ok) throw new Error(); if (res) writeSynced(list); })
+      .catch(() => { synced.current = ""; say("Couldn't update the reminder times on the server"); });
   }, [list, state, server]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function turnOff() {
