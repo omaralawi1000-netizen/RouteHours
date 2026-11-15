@@ -38,6 +38,23 @@ export const AUTO_FINISH_AFTER = 60;
 /** EU driving rules: a 45-minute break is due after 4 h 30 min of driving. */
 export const BREAK_AFTER = 270;
 
+/**
+ * Minutes driven since the last break that counts: 45 minutes in one go, or 15 minutes followed
+ * later by 30 (the EU split break). A shorter stop pauses the count but doesn't reset it.
+ */
+export function drivenSinceRest(startedAt: number, breaks: { start: number; end?: number }[], end: number) {
+  let driven = 0, from = startedAt, firstHalf = false;
+  for (const b of breaks.slice().sort((x, y) => x.start - y.start)) {
+    driven += Math.max(0, Math.min(b.start, end) - from) / 60000;
+    if (!b.end) return driven;
+    from = b.end;
+    const length = (b.end - b.start) / 60000;
+    if (length >= 45 || (firstHalf && length >= 30)) { driven = 0; firstHalf = false; }
+    else if (length >= 15) firstHalf = true;
+  }
+  return driven + Math.max(0, end - from) / 60000;
+}
+
 /** Omar's usual split day, offered while the templates are still the app's defaults. */
 export const SPLIT_DAY: ShiftTemplate[] = [
   { id: "morning", name: "Morning", start: "06:45", end: "08:10" },

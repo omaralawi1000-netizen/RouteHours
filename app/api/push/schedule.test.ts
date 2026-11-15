@@ -62,3 +62,16 @@ test("four usual parts keep all twelve reminders", () => {
   const list = Array.from({ length: 13 }, (_, i) => ({ id: `r${i}`, time: "06:40", title: "x", body: "y", action: "start" }));
   assert.equal(cleanReminders(list).length, 12);
 });
+
+test("an overnight finish goes out on the shift's next day, by the shift's weekday", () => {
+  const at = (date: string, minutes: number, weekday: number) => ({ date, minutes, weekday });
+  const night = device({ reminders: [{ id: "n-end", time: "06:00", title: "End", body: "", action: "finish", day: 1 }] });
+  // Friday night's shift ends Saturday 06:00: sent. Monday 06:00 follows Sunday, not a working day: not sent.
+  assert.deepEqual(due(night, at("2026-11-14", 6 * 60, 6)).map(r => r.id), ["n-end"]);
+  assert.deepEqual(due(night, at("2026-11-16", 6 * 60, 1)), []);
+  const early = device({ reminders: [{ id: "e-start", time: "23:55", title: "Start", body: "", action: "start", day: -1 }] });
+  // A Monday 00:00 shift is nudged on Sunday 23:55; Friday 23:55 would be for Saturday: not sent.
+  assert.deepEqual(due(early, at("2026-11-15", 23 * 60 + 55, 7)).map(r => r.id), ["e-start"]);
+  assert.deepEqual(due(early, at("2026-11-13", 23 * 60 + 55, 5)), []);
+  assert.deepEqual(cleanReminders([{ time: "06:00", day: 1 }, { time: "06:00", day: 3 }]).map(r => r.day), [1, undefined]);
+});

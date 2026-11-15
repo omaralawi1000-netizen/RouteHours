@@ -17,6 +17,8 @@ import { hm, partsFrom } from "./usual";
  * format: the timesheet just sees two shifts, like a split day. The run itself (which part of the
  * usual day, the pieces before a break, "still driving") lives on this phone only.
  */
+/** The shift a note belongs to: the running part (by its start) or a saved shift. */
+export type NoteTarget = { activeStart?: string; shiftId?: string };
 export type Run = { startedAt: string; label?: string; pieces: string[]; breakSince?: string; stillDriving?: boolean };
 export type Phase = "idle" | "running" | "landing";
 const RUN_KEY = "routehours:run";
@@ -158,10 +160,24 @@ export function useRun(say: Say) {
     say(`Usual day logged · ${hm(minutes)}`, { label: "Undo", onClick: () => { update(current => ({ shifts: current.shifts.filter(s => !ids.has(s.id)) })); say("Removed"); } });
   }
 
-  function addNote(text: string) {
+  /** Where a note would go right now: the running part, or the last shift. Kept while a voice note is written down. */
+  function noteTarget(): NoteTarget | null {
+    const current = latest.current.active;
+    if (current) return { activeStart: current.start };
+    const last = pieces.at(-1) ?? latest.current.shifts.slice().sort((a, b) => b.start.localeCompare(a.start))[0];
+    return last ? { shiftId: last.id } : null;
+  }
+
+  function addNote(text: string, target?: NoteTarget | null) {
     const note = text.trim();
     if (!note) return false;
     const current = latest.current.active;
+    if (target) {
+      // A part that has since been saved keeps its start, so the note still finds it.
+      if (current && target.activeStart === current.start) { update({ active: { ...current, notes: [...current.notes, note] } }); return true; }
+      const shift = latest.current.shifts.find(s => target.shiftId ? s.id === target.shiftId : s.start === target.activeStart);
+      if (shift) { update(data => ({ shifts: data.shifts.map(s => s.id === shift.id ? { ...s, notes: [...s.notes, note] } : s) })); return true; }
+    }
     if (current) { update({ active: { ...current, notes: [...current.notes, note] } }); return true; }
     const last = pieces.at(-1) ?? latest.current.shifts.slice().sort((a, b) => b.start.localeCompare(a.start))[0];
     if (!last) return false;
@@ -174,7 +190,7 @@ export function useRun(say: Say) {
     phase, running, onBreak, active, run, label: run?.label, stillDriving: Boolean(run?.stillDriving),
     startedAt: landing && !running ? landing.startedAt : startedAt, endedAt: landing?.endedAt ?? 0,
     breaks: landing && !running ? landing.breaks : breaks, pieces,
-    start, finish, toggleBreak, backdate, keepDriving, logUsualDay, addNote,
+    start, finish, toggleBreak, backdate, keepDriving, logUsualDay, addNote, noteTarget,
   };
 }
 export type RunControls = ReturnType<typeof useRun>;

@@ -13,7 +13,7 @@ import RouteLine from "../ui/route-line";
 import WeekBars, { type DayBar } from "../ui/week-bars";
 import { fade, spring } from "../ui/motion";
 import { item } from "../lab/stagger";
-import { AUTO_FINISH_AFTER, BREAK_AFTER, hm, hms, kr, minutesToClock, nextPart, toMinutes, zoneMinutes, type DayPart } from "./usual";
+import { AUTO_FINISH_AFTER, BREAK_AFTER, drivenSinceRest, hm, hms, kr, minutesToClock, nextPart, toMinutes, zoneMinutes, type DayPart } from "./usual";
 import type { RunControls } from "./run";
 import styles from "./home.module.css";
 
@@ -45,9 +45,7 @@ export default function Today(props: {
   const breakMs = breaks.reduce((sum, b) => sum + ((b.end ?? end) - b.start), 0);
   const elapsed = end - startedAt - breakMs;
   const currentBreak = breaks.find(b => !b.end);
-  const lastBreakEnd = breaks.filter(b => b.end && b.end - b.start >= 15 * 60000).reduce((last, b) => Math.max(last, b.end ?? 0), startedAt);
-  const drivingSince = (end - lastBreakEnd) / 60000;
-  const dueIn = BREAK_AFTER - drivingSince;
+  const dueIn = BREAK_AFTER - drivenSinceRest(startedAt, breaks, end);
   const part = parts.find(p => p.label === run.label);
   const usualMinutes = part?.minutes ?? 450;
   const expectedEnd = startedAt + usualMinutes * 60000 + breakMs;

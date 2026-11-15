@@ -9,8 +9,10 @@ import Toggle from "../ui/toggle";
 import { minutesToClock, toMinutes, type DayPart } from "./usual";
 import styles from "./home.module.css";
 
-type Reminder = { id: string; time: string; action: "start" | "finish" | "leave"; title: string; body: string };
+type Reminder = { id: string; time: string; action: "start" | "finish" | "leave"; title: string; body: string; day?: 1 | -1 };
 const minus = (time: string, minutes: number) => minutesToClock(toMinutes(time) - minutes);
+/** -1 when the reminder falls on the evening before the shift's day (a 00:10 start, say). */
+const before = (time: string, minutes: number) => toMinutes(time) < minutes ? { day: -1 as const } : {};
 
 /** "Leave now": minutes before each usual start. Zero means off. */
 export const TRAVEL_OPTIONS = [0, 15, 20, 30, 45] as const;
@@ -21,9 +23,10 @@ export const isTravel = (v: unknown): v is number => typeof v === "number" && (T
 /** What gets sent, Monday to Friday, in the work time zone: a nudge before each usual start and a check at each usual end. */
 export function remindersFor(parts: DayPart[], travel: number): Reminder[] {
   const list: Reminder[] = parts.flatMap(part => [
-    { id: `${part.id}-start`, time: minus(part.start, 5), action: "start" as const, title: `${part.label} shift at ${part.start}`, body: "Tap Start shift when you pull out." },
-    { id: `${part.id}-end`, time: part.end, action: "finish" as const, title: `End of the ${part.label.toLowerCase()} run?`, body: `Usually done at ${part.end}. Tap Finish shift.` },
-    ...(travel ? [{ id: `${part.id}-leave`, time: minus(part.start, travel), action: "leave" as const, title: `Leave for the ${part.label.toLowerCase()} shift`, body: `It starts at ${part.start}. About ${travel} min to get there.` }] : []),
+    { id: `${part.id}-start`, time: minus(part.start, 5), action: "start" as const, title: `${part.label} shift at ${part.start}`, body: "Tap Start shift when you pull out.", ...before(part.start, 5) },
+    // An overnight part (22:00–06:00) ends on the next day.
+    { id: `${part.id}-end`, time: part.end, action: "finish" as const, title: `End of the ${part.label.toLowerCase()} run?`, body: `Usually done at ${part.end}. Tap Finish shift.`, ...(toMinutes(part.start) + part.minutes >= 1440 ? { day: 1 as const } : {}) },
+    ...(travel ? [{ id: `${part.id}-leave`, time: minus(part.start, travel), action: "leave" as const, title: `Leave for the ${part.label.toLowerCase()} shift`, body: `It starts at ${part.start}. About ${travel} min to get there.`, ...before(part.start, travel) }] : []),
   ]);
   return list.sort((a, b) => a.time.localeCompare(b.time));
 }

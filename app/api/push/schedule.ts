@@ -1,7 +1,8 @@
 /** Pure helpers for shift reminders: checking input and working out what is due. No network here. */
 
 export type ReminderAction = "start" | "finish" | "leave";
-export type Reminder = { id: string; time: string; title: string; body: string; action: ReminderAction };
+/** `day` is set when the reminder falls on the day after (1) or before (-1) the shift's own day, as with an overnight shift. */
+export type Reminder = { id: string; time: string; title: string; body: string; action: ReminderAction; day?: 1 | -1 };
 export type Device = {
   endpoint: string;
   keys: { p256dh: string; auth: string };
@@ -36,7 +37,8 @@ export function cleanReminders(value: unknown): Reminder[] {
     if (typeof x.time !== "string" || !/^([01]\d|2[0-3]):[0-5]\d$/.test(x.time)) return [];
     const action: ReminderAction = x.action === "finish" || x.action === "leave" ? x.action : "start";
     const text = (s: unknown, max: number) => typeof s === "string" ? s.trim().slice(0, max) : "";
-    return [{ id: text(x.id, 40) || `r${i}`, time: x.time, title: text(x.title, 60) || "RouteHours", body: text(x.body, 140), action }];
+    const day = x.day === 1 || x.day === -1 ? { day: x.day as 1 | -1 } : {};
+    return [{ id: text(x.id, 40) || `r${i}`, time: x.time, title: text(x.title, 60) || "RouteHours", body: text(x.body, 140), action, ...day }];
   });
 }
 
@@ -60,8 +62,10 @@ export function copenhagenNow(now = new Date(), zone = ZONE) {
 
 /** A reminder is due from its time until 20 minutes after, once a day, so a late or repeated ping never doubles it. */
 export function due(device: Device, now = copenhagenNow()): Reminder[] {
-  if (!device.days.includes(now.weekday)) return [];
   return device.reminders.filter(r => {
+    // The working days are the shifts' days: a finish at 06:00 after a Friday night shift goes out on Saturday.
+    const shiftDay = (now.weekday - 1 - (r.day ?? 0) + 7) % 7 + 1;
+    if (!device.days.includes(shiftDay)) return false;
     const [h, m] = r.time.split(":").map(Number);
     const at = h * 60 + m;
     return now.minutes >= at && now.minutes < at + 20 && device.sent[r.id] !== now.date;

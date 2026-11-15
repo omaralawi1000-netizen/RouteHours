@@ -32,7 +32,7 @@ import { screen } from "../lab/stagger";
 import { NEED_KEY, useVoice, type Logged } from "./ai";
 import { isBool, usePref } from "./prefs";
 import { isTravel, LEGACY_TRAVEL_KEY, TRAVEL_KEY } from "./reminders";
-import { useRun } from "./run";
+import { useRun, type NoteTarget } from "./run";
 import SendSheet from "./send-sheet";
 import Settings from "./settings";
 import ShiftSheet from "./shift-sheet";
@@ -227,9 +227,11 @@ function Shell() {
   const [noteText, setNoteText] = useState("");
   const liveNotes = run.active?.notes ?? [];
   function needKey() { say(NEED_KEY, { label: "Settings", onClick: () => changeTab("settings") }); }
+  // The shift is picked when recording starts, so a note never lands on a shift started while it was written down.
+  const noteTo = useRef<NoteTarget | null>(null);
   const voice = useVoice({
     apiKey: geminiApiKey,
-    onText: text => { if (run.addNote(text)) say(`Note added: ${text}`); else say("Start a shift first, then add the note"); },
+    onText: text => { if (run.addNote(text, noteTo.current)) say(`Note added: ${text}`); else say("Start a shift first, then add the note"); },
     onError: message => message === NEED_KEY ? needKey() : say(message),
   });
 
@@ -309,7 +311,7 @@ function Shell() {
               {ready && <m.main key={tab} className={styles.page} custom={direction} variants={screen} initial={opened ? "enter" : "hidden"} animate="show" exit="leave">
                 {tab === "today" && <Today run={run} zone={zone} parts={parts} rate={rate} goalMinutes={Math.round(weeklyGoalHours * 60)} dateLabel={dateLabel}
                   weekMinutes={thisWeek.total} todayMinutes={todayMinutes} weekDays={weekDays} recent={recent} dayOff={todayMark !== "worked"} travel={travel}
-                  mic={voice.mic} level={voice.level} micSeconds={voice.seconds} onMic={voice.toggle} defaults={stillDefault(templates)}
+                  mic={voice.mic} level={voice.level} micSeconds={voice.seconds} onMic={() => { if (voice.mic === "idle") noteTo.current = run.noteTarget(); voice.toggle(); }} defaults={stillDefault(templates)}
                   onAddPast={() => addShift()} onOpenShift={openShift} onNotes={() => setNotesOpen(true)} onSettings={() => changeTab("settings")} noteCount={liveNotes.length}/>}
                 {tab === "week" && <Week weeks={weeks} index={weekIndex} onIndex={setWeekIndex} title={`Week ${isoWeek(selected.monday)} · ${rangeLabel(selected.monday)}`} days={weekRows} total={selected.total} rate={rate}
                   warnings={warnings} status={status} statusPulse={statusPulse} isCurrent={weekIndex === WEEKS_BACK - 1} todayMark={todayMark} onTodayMark={changeTodayMark}
