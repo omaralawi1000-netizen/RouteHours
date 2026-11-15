@@ -1,10 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
-import { FIXED_NOW } from "./helpers";
+import { FIXED_NOW, QUIET_NOW, installClock } from "./helpers";
 
 // The app at "/" in the Headlight design, on the real saved records.
 async function openHome(page: Page, path = "/") {
   await page.route(url => !["127.0.0.1", "localhost"].includes(url.hostname), route => route.abort());
-  await page.clock.install({ time: FIXED_NOW });
+  await installClock(page, FIXED_NOW);
   await page.goto(path);
   await expect(page.getByRole("button", { name: /Start shift|Finish shift/ })).toBeVisible();
 }
@@ -146,6 +146,7 @@ test("home: unreadable data shows recovery right here, without leaving the scree
 test.describe("home: smooth on a phone", () => {
   test.beforeEach(async ({ page }) => {
     await page.route(url => !["127.0.0.1", "localhost"].includes(url.hostname), route => route.abort());
+    await installClock(page, QUIET_NOW);
   });
 
   test("nothing loops, at rest or on shift, so the blurred cards are drawn once and left alone", async ({ page }) => {
@@ -216,7 +217,7 @@ test.describe("home: smooth on a phone", () => {
 test("home: the usual day only adds the parts that aren't logged yet", async ({ page }) => {
   // 16:00 in Copenhagen: both starter parts (07:00–09:00, 13:00–15:00) are over, so the chip offers the usual day.
   await page.route(url => !["127.0.0.1", "localhost"].includes(url.hostname), route => route.abort());
-  await page.clock.install({ time: new Date("2026-11-11T15:00:00Z") });
+  await installClock(page, new Date("2026-11-11T15:00:00Z"));
   await page.goto("/");
   await page.getByRole("button", { name: "Add a past shift" }).click();
   const sheet = page.getByRole("dialog");
@@ -236,7 +237,7 @@ test("home: the usual day only adds the parts that aren't logged yet", async ({ 
 test("home: Review & send keeps its week when Sunday turns into Monday while it is open", async ({ page }) => {
   // 23:59 on Sunday 15 November in Copenhagen, reviewing the week of 9–15 November.
   await page.route(url => !["127.0.0.1", "localhost"].includes(url.hostname), route => route.abort());
-  await page.clock.install({ time: new Date("2026-11-15T22:59:00Z") });
+  await installClock(page, new Date("2026-11-15T22:59:00Z"));
   await page.goto("/");
   await page.getByRole("button", { name: "Week", exact: true }).click();
   await page.getByRole("button", { name: "Review & send" }).click();
@@ -250,7 +251,7 @@ test("home: Review & send keeps its week when Sunday turns into Monday while it 
 test("home: Review & send can fix one time of a shift that ends in the hour repeated when the clocks go back", async ({ page }) => {
   // 01:30 summer time on Sunday 25 October 2026; the shift runs two real hours and finishes at 02:30 winter time.
   await page.route(url => !["127.0.0.1", "localhost"].includes(url.hostname), route => route.abort());
-  await page.clock.install({ time: new Date("2026-10-24T23:30:00Z") });
+  await installClock(page, new Date("2026-10-24T23:30:00Z"));
   await page.goto("/");
   await page.getByRole("button", { name: "Start shift" }).click();
   await page.clock.fastForward(120 * 60_000);
@@ -282,7 +283,7 @@ test.describe("home: installing on an iPhone", () => {
 test("home: a usual run nobody finished still stops on its own while the Week tab is open", async ({ page }) => {
   // 06:45 on Wednesday 11 November in Copenhagen, with the 06:45–08:10 + 12:25–14:45 split day.
   await page.route(url => !["127.0.0.1", "localhost"].includes(url.hostname), route => route.abort());
-  await page.clock.install({ time: new Date("2026-11-11T05:45:00Z") });
+  await installClock(page, new Date("2026-11-11T05:45:00Z"));
   await page.goto("/");
   await page.getByRole("button", { name: "Settings", exact: true }).last().click();
   await page.getByRole("button", { name: "Use these" }).click();

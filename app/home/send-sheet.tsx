@@ -17,7 +17,7 @@ import RollingNumber from "../ui/rolling-number";
 import SegmentedControl from "../ui/segmented-control";
 import Sheet from "../ui/sheet";
 import Toggle from "../ui/toggle";
-import { fade, spring } from "../ui/motion";
+import { fade, spring, tf } from "../ui/motion";
 import { tick } from "../ui/haptics";
 import type { ToastMessage } from "../ui/toast";
 import { kr, toMinutes } from "./usual";
@@ -79,6 +79,7 @@ function Body({ onClose, week, zone, shifts, running, profile, onProfile, detail
     return () => window.removeEventListener("routehours:submissions", read);
   }, []);
 
+  const firstFile = useRef(true);
   const report = useMemo(() => buildWeeklyReport(shifts, week, profile, details, includeNotes, zone), [shifts, week, profile, details, includeNotes, zone]);
   const layout = useMemo(() => reportLayout(report), [report]);
   // Recipient and message edits must not change the attachment.
@@ -93,10 +94,12 @@ function Body({ onClose, week, zone, shifts, running, profile, onProfile, detail
 
   useEffect(() => {
     let cancelled = false; setFileError("");
+    // The first file waits until the sheet has risen; later ones (after an edit) follow quickly.
     const timer = setTimeout(() => {
       void import("@/lib/timesheet-file").then(mod => mod.createTimesheetFile(JSON.parse(attachmentKey) as WeeklyReport)).then(made => { if (!cancelled) setPrepared({ key: attachmentKey, file: made }); })
         .catch(() => { if (!cancelled) setFileError("The Excel file couldn't be made. Try again."); });
-    }, 180);
+    }, firstFile.current ? 600 : 180);
+    firstFile.current = false;
     return () => { cancelled = true; clearTimeout(timer); };
   }, [attachmentKey, retry]);
 
@@ -192,7 +195,7 @@ function Body({ onClose, week, zone, shifts, running, profile, onProfile, detail
   const holdLabel = sending ? "Sending…" : !profile.email.trim() ? "Add who it goes to" : !validRecipient(profile.email) ? "Check the email address" : !account ? "Connect Gmail first" : !online ? "Offline" : !file ? "Making the file…" : againFor === attachmentKey ? "Hold to send again" : "Hold to send";
 
   if (sent) return <div className={styles.done}>
-    <m.span className={styles.doneIcon} initial={{ scale: 0.4, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={spring.reward}><Check/></m.span>
+    <m.span className={styles.doneIcon} initial={{ transform: tf({ scale: 0.4 }), opacity: 0 }} animate={{ transform: tf(), opacity: 1 }} transition={spring.reward}><Check/></m.span>
     <h3 className="serif">Sent</h3>
     <p>Gmail sent <strong>{sent.filename}</strong> to <strong>{sent.recipient}</strong>.</p>
     {sent.note && <p className={styles.alertText} role="alert">{sent.note}</p>}
@@ -260,7 +263,7 @@ function Body({ onClose, week, zone, shifts, running, profile, onProfile, detail
                 {mark !== "worked" && <span className={styles.chip}>{mark === "syg" ? "Sick" : "Day off"}</span>}
               </span>
               <span className={`${styles.dayTotal} numeric`}>{row.minutes ? hhmm(row.minutes) : ""}</span>
-              <m.span className={styles.chev} animate={{ rotate: isOpen ? 180 : 0 }} transition={spring.snappy}><ChevronDown/></m.span>
+              <span className={styles.chev} aria-hidden="true"><ChevronDown/></span>
             </button>
             <AnimatePresence initial={false}>
               {isOpen && <m.div key="edit" className={styles.editWrap} initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0, transition: fade }} transition={spring.smooth}>

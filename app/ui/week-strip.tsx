@@ -49,7 +49,7 @@ export default function WeekStrip({ weeks, index, onIndex }: { weeks: WeekData[]
         <m.div key={week.label} custom={direction} variants={slide} initial="enter" animate="center" exit="leave" transition={spring.smooth} className={styles.days}>
           {week.days.map((day, i) => <div key={i} className={`${styles.day} ${day.today ? styles.today : ""}`}>
             <div className={styles.barSlot}>
-              <m.div className={styles.bar} initial={{ scaleY: 0 }} animate={{ scaleY: Math.max(day.minutes / max, 0.06) }} transition={{ ...spring.smooth, delay: i * 0.025 }}/>
+              <m.div className={styles.bar} initial={{ transform: "scaleY(0)" }} animate={{ transform: `scaleY(${Math.round(Math.max(day.minutes / max, 0.06) * 1000) / 1000})` }} transition={{ ...spring.smooth, delay: i * 0.025 }}/>
             </div>
             <span className={styles.dayName}>{day.short}</span>
             <span className={`${styles.hours} numeric`}>{day.minutes ? hm(day.minutes) : "–"}</span>
@@ -60,8 +60,9 @@ export default function WeekStrip({ weeks, index, onIndex }: { weeks: WeekData[]
   </div>;
 }
 
+// Transform strings, so the browser runs the glide on its compositor (see tf in ./motion).
 const slide = {
-  enter: (direction: number) => ({ x: direction >= 0 ? "60%" : "-60%", opacity: 0 }),
-  center: { x: 0, opacity: 1 },
-  leave: (direction: number) => ({ x: direction >= 0 ? "-60%" : "60%", opacity: 0, transition: spring.exit }),
+  enter: (direction: number) => ({ transform: `translateX(${direction >= 0 ? "60%" : "-60%"})`, opacity: 0 }),
+  center: { transform: "translateX(0%)", opacity: 1 },
+  leave: (direction: number) => ({ transform: `translateX(${direction >= 0 ? "-60%" : "60%"})`, opacity: 0, transition: spring.exit }),
 };

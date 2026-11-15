@@ -59,15 +59,18 @@ function SheetPanel({ onClose, title, children, footer }: { onClose: () => void;
 
   return <>
     <m.div className={styles.scrim} onClick={onClose} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, transition: fade }} transition={fade} aria-hidden="true"/>
-    <m.div ref={panel} className={styles.sheet} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}
-      initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%", transition: spring.exit }} transition={spring.smooth}
-      drag="y" dragListener={false} dragControls={controls} dragConstraints={{ top: 0, bottom: 0 }} dragElastic={{ top: 0.06, bottom: 1 }} dragTransition={{ bounceStiffness: 420, bounceDamping: 36 }} onDragEnd={end}>
-      <div className={styles.grip} onPointerDown={event => controls.start(event)}>
-        <span className={styles.handle} aria-hidden="true"/>
-        <h2 id={titleId} className={`${styles.title} serif`}>{title}</h2>
-      </div>
-      <div className={styles.body}>{children}</div>
-      {footer && <div className={styles.footer}>{footer}</div>}
+    {/* The frame rises and falls as one transform the browser runs on its compositor; the panel
+        inside follows your finger. Two layers, because a drag moves the panel from JavaScript. */}
+    <m.div className={styles.frame} initial={{ transform: "translateY(100%)" }} animate={{ transform: "translateY(0%)" }} exit={{ transform: "translateY(100%)", transition: spring.exit }} transition={spring.smooth}>
+      <m.div ref={panel} className={styles.sheet} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}
+        drag="y" dragListener={false} dragControls={controls} dragConstraints={{ top: 0, bottom: 0 }} dragElastic={{ top: 0.06, bottom: 1 }} dragTransition={{ bounceStiffness: 420, bounceDamping: 36 }} onDragEnd={end}>
+        <div className={styles.grip} onPointerDown={event => controls.start(event)}>
+          <span className={styles.handle} aria-hidden="true"/>
+          <h2 id={titleId} className={`${styles.title} serif`}>{title}</h2>
+        </div>
+        <div className={styles.body}>{children}</div>
+        {footer && <div className={styles.footer}>{footer}</div>}
+      </m.div>
     </m.div>
   </>;
 }

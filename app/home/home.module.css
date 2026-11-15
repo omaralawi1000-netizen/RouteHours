@@ -13,7 +13,7 @@
 .top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 4px 4px 0; }
 .eyebrow { font-size: 12px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-2); }
 .title { position: relative; font-size: calc(40px * var(--title-scale, 1)); line-height: 1.05; margin-top: 4px; text-shadow: 0 2px 30px rgb(0 0 0 / 0.15); }
-.roundButton { position: relative; flex: none; width: 48px; height: 48px; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 50%; cursor: pointer; color: var(--text); background: var(--glass);  box-shadow: inset 0 var(--hairline) 0 var(--glass-edge), 0 0 0 var(--hairline) var(--line), var(--lift-shadow); }
+.roundButton { --press: 0.92; position: relative; flex: none; width: 48px; height: 48px; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 50%; cursor: pointer; color: var(--text); background: var(--glass);  box-shadow: inset 0 var(--hairline) 0 var(--glass-edge), 0 0 0 var(--hairline) var(--line), var(--lift-shadow); }
 .roundButton svg { width: 20px; height: 20px; }
 /*
  * Every button that floats on the wallpaper (the settings button, the shift chip, the mic, + and
@@ -62,7 +62,7 @@
 .cardMeta { font-size: 13px; color: var(--text-2); }
 .list { list-style: none; margin: 0 -8px; padding: 0; }
 .list li { overflow: hidden; }
-.shiftRow { width: 100%; display: flex; align-items: center; gap: 12px; min-height: 60px; padding: 8px; border: 0; border-radius: 16px; background: none; text-align: left; cursor: pointer; }
+.shiftRow { --press: 0.98; width: 100%; display: flex; align-items: center; gap: 12px; min-height: 60px; padding: 8px; border: 0; border-radius: 16px; background: none; text-align: left; cursor: pointer; }
 .shiftRow:active { background: var(--press); }
 .list li + li .shiftRow { box-shadow: 0 -1px 0 var(--line); border-radius: 0 0 16px 16px; }
 .rowDay { flex: 1; display: flex; flex-direction: column; gap: 2px; font-weight: 500; font-size: 16px; }
@@ -113,9 +113,12 @@
 
 /* Wallpaper picker */
 .picker { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px 10px; }
-.pick { position: relative; display: flex; flex-direction: column; gap: 7px; padding: 0; border: 0; background: none; cursor: pointer; text-align: center; }
+.pick { --press: 0.95; position: relative; display: flex; flex-direction: column; gap: 7px; padding: 0; border: 0; background: none; cursor: pointer; text-align: center; }
 .thumb { position: relative; display: block; aspect-ratio: 3 / 4; border-radius: 18px; overflow: hidden; isolation: isolate; box-shadow: inset 0 0 0 var(--hairline) var(--glass-edge), 0 10px 24px -14px rgb(0 0 0 / 0.6); }
-.ring { position: absolute; left: -4px; right: -4px; top: -4px; aspect-ratio: 3 / 4; height: auto; border-radius: 22px; box-shadow: 0 0 0 2px var(--accent), 0 0 18px rgb(var(--glow-run) / 0.55); pointer-events: none; display: flex; align-items: flex-start; justify-content: flex-end; padding: 10px; }
+.ring { position: absolute; left: -4px; right: -4px; top: -4px; aspect-ratio: 3 / 4; height: auto; border-radius: 22px; box-shadow: 0 0 0 2px var(--accent), 0 0 18px rgb(var(--glow-run) / 0.55); pointer-events: none; display: flex; align-items: flex-start; justify-content: flex-end; padding: 10px;
+  opacity: 0; transform: scale(0.94); transition: opacity 0.16s cubic-bezier(0.2, 0, 0, 1), transform var(--spring-snappy-ms) var(--spring-snappy); }
+.pick[aria-checked="true"] .ring { opacity: 1; transform: none; }
+:global([data-motion="reduced"]) .ring { transition: opacity 0.16s cubic-bezier(0.2, 0, 0, 1); }
 .ring svg { width: 20px; height: 20px; padding: 3px; border-radius: 50%; background: var(--accent); color: var(--on-accent); stroke-width: 3; }
 .pickName { font-size: 13px; font-weight: 500; color: var(--text); line-height: 1.2; }
 

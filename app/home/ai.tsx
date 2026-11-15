@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { AnimatePresence, m } from "motion/react";
+import { AnimatePresence, m, useMotionValue } from "motion/react";
 import { ArrowUp, Camera, ClipboardPaste, KeyRound, Sparkles } from "lucide-react";
 import Button from "../ui/button";
 import Glass from "../ui/glass";
 import Toggle from "../ui/toggle";
 import MicPill, { type MicState } from "../ui/mic-pill";
-import { spring } from "../ui/motion";
+import { spring, tf } from "../ui/motion";
 import type { Media, Payslip } from "../api/ai/tasks";
 import { hm } from "./usual";
 import styles from "./ai.module.css";
@@ -49,7 +49,9 @@ export const NEED_KEY = "Add your Gemini key in Settings first.";
  */
 export function useVoice({ apiKey, onText, onError }: { apiKey: string; onText: (text: string) => void; onError: (message: string) => void }) {
   const [mic, setMic] = useState<MicState>("idle");
-  const [level, setLevel] = useState(0);
+  // The level changes about 11 times a second. As a Motion value it goes straight to the waveform's
+  // CSS, so recording never re-renders the screen.
+  const level = useMotionValue(0);
   const [seconds, setSeconds] = useState(0);
   const live = useRef<{ recorder: MediaRecorder; stream: MediaStream; chunks: Blob[]; stopTimer: number; meter: number; audio: AudioContext } | null>(null);
   const handlers = useRef({ onText, onError });
@@ -81,13 +83,13 @@ export function useVoice({ apiKey, onText, onError }: { apiKey: string; onText: 
     const meter = window.setInterval(() => {
       analyser.getByteTimeDomainData(samples);
       let peak = 0; for (const s of samples) peak = Math.max(peak, Math.abs(s - 128));
-      setLevel(Math.min(1, peak / 50));
+      level.set(Math.min(1, peak / 50));
       setSeconds(Math.floor((Date.now() - begun) / 1000));
     }, 90);
     const stopTimer = window.setTimeout(() => void finish(), LONGEST * 1000);
     live.current = { recorder, stream, chunks, stopTimer, meter, audio };
     recorder.start();
-    setSeconds(0); setLevel(0.2); setMic("listening");
+    setSeconds(0); level.set(0.2); setMic("listening");
   }
 
   async function finish() {
@@ -178,12 +180,12 @@ export function AskCard({ apiKey, context, say, onNeedKey }: { apiKey: string; c
     <form className={styles.askRow} onSubmit={event => { event.preventDefault(); void ask(); }}>
       <input className={styles.input} value={question} onChange={event => setQuestion(event.target.value)} placeholder="How much did I work in October?" aria-label="Question about your hours" enterKeyHint="send"/>
       {question.trim()
-        ? <m.button type="submit" className={styles.send} aria-label="Ask" disabled={busy} whileTap={{ scale: 0.92 }} transition={spring.tap}><ArrowUp aria-hidden="true"/></m.button>
+        ? <button type="submit" data-press className={styles.send} aria-label="Ask" disabled={busy}><ArrowUp aria-hidden="true"/></button>
         : <MicPill state={busy ? "writing" : voice.mic} level={voice.level} seconds={voice.seconds} onToggle={voice.toggle} label="Ask by voice"/>}
     </form>
     <AnimatePresence mode="popLayout" initial={false}>
       {busy && !answer && <m.p key="thinking" className={lab.hint} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>Thinking…</m.p>}
-      {answer && <m.div key={answer.q} className={styles.answer} initial={{ opacity: 0, y: 8, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, scale: 0.98 }} transition={spring.settle}>
+      {answer && <m.div key={answer.q} className={styles.answer} initial={{ opacity: 0, transform: tf({ y: 8, scale: 0.98 }) }} animate={{ opacity: 1, transform: tf() }} exit={{ opacity: 0, transform: tf({ scale: 0.98 }) }} transition={spring.settle}>
         <p className={styles.asked}>{answer.q}</p>
         <p>{answer.a}</p>
       </m.div>}
@@ -225,7 +227,7 @@ export function PayslipCard({ apiKey, logged, say, onNeedKey, rate }: { apiKey: 
     <div className={lab.cardHead}><h2 className={`${lab.cardTitle} serif`}>Payslip check</h2><span className={lab.cardMeta}>Photo</span></div>
     <input ref={input} type="file" accept="image/*" hidden onChange={event => void check(event.target.files?.[0])} aria-label="Payslip photo"/>
     <AnimatePresence mode="popLayout" initial={false}>
-      {result && <m.div key="result" className={styles.payslip} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={spring.settle}>
+      {result && <m.div key="result" className={styles.payslip} initial={{ opacity: 0, transform: tf({ y: 8 }) }} animate={{ opacity: 1, transform: tf() }} exit={{ opacity: 0 }} transition={spring.settle}>
         <div className={styles.compare}>
           <div><p className={lab.statLabel}>Payslip</p><p className={`${styles.compareBig} numeric`}>{result.hours !== null ? hm(Math.round(result.hours * 60)) : "?"}</p>
             <p className={lab.hint}>{result.periodStart && result.periodEnd ? `${niceDate(result.periodStart)} – ${niceDate(result.periodEnd)}` : "Period unclear"}</p>

@@ -5,7 +5,7 @@
 
 .askRow { display: flex; align-items: center; gap: 10px; }
 .askRow .input { flex: 1; }
-.send { flex: none; width: var(--tap-min); height: var(--tap-min); display: grid; place-items: center; border: 0; border-radius: 50%; cursor: pointer; color: var(--on-accent); background: var(--accent); box-shadow: var(--lift-shadow, none); }
+.send { --press: 0.92; flex: none; width: var(--tap-min); height: var(--tap-min); display: grid; place-items: center; border: 0; border-radius: 50%; cursor: pointer; color: var(--on-accent); background: var(--accent); box-shadow: var(--lift-shadow, none); }
 .send svg { width: 20px; height: 20px; }
 .send:disabled { opacity: 0.6; cursor: progress; }
 

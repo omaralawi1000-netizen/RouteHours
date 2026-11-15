@@ -10,7 +10,8 @@ const DIGITS = "0123456789";
  * A number with weight: when it changes, only the digits that changed roll to their new value;
  * the rest stay still. Characters are matched from the right, so "12h 30m" can roll into "0:00:00"
  * in place. Letters and separators that appear or leave fade, and the row glides to its new width.
- * With reduced motion, digits change without rolling.
+ * With reduced motion, digits change without rolling. The roll is a CSS transition, so the browser
+ * runs it on its compositor and a ticking clock costs the page nothing per frame.
  */
 export default function RollingNumber({ value, className, label }: { value: string; className?: string; label?: string }) {
   const chars = [...value];
@@ -22,7 +23,7 @@ export default function RollingNumber({ value, className, label }: { value: stri
         const fromRight = chars.length - index;
         const digit = DIGITS.indexOf(char);
         if (digit >= 0) return <m.span {...grow} key={`d${fromRight}`} className={styles.window} aria-hidden="true" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, transition: fade }}>
-          <m.span className={styles.strip} initial={false} animate={{ y: `${-digit * 10}%` }} transition={spring.snappy}>{DIGITS.split("").map(d => <span key={d}>{d}</span>)}</m.span>
+          <span className={styles.strip} style={{ transform: `translateY(${-digit * 10}%)` }}>{DIGITS.split("").map(d => <span key={d}>{d}</span>)}</span>
           <span className={styles.sizer}>0</span>
         </m.span>;
         return <m.span {...grow} key={`c${fromRight}${char}`} className={/[a-z]/i.test(char) ? styles.unit : styles.mark} aria-hidden="true" initial={{ opacity: 0 }} animate={{ opacity: 1, transition: fade }} exit={{ opacity: 0, transition: fade }}>{char === " " ? " " : char}</m.span>;

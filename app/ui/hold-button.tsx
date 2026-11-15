@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { animate, AnimatePresence, m, useMotionValue, useReducedMotion, useTransform, type AnimationPlaybackControls } from "motion/react";
-import { fade, spring } from "./motion";
+import { fade, spring, tf } from "./motion";
 import { tick } from "./haptics";
 import styles from "./hold-button.module.css";
 
@@ -46,7 +46,7 @@ export default function HoldButton({ children, confirmLabel = "Press again to se
     {[false, true].map(onFill => <m.span key={String(onFill)} className={`${styles.content} ${onFill ? styles.onFill : ""}`} style={onFill ? { clipPath: reveal } : undefined} aria-hidden={onFill || undefined}>
       {icon && <span className={styles.icon} aria-hidden="true">{icon}</span>}
       <AnimatePresence mode="popLayout" initial={false}>
-        <m.span key={armed ? "armed" : hint ? "hint" : "label"} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8, transition: fade }} transition={spring.snappy}>{armed ? confirmLabel : hint ? "Hold to send" : children}</m.span>
+        <m.span key={armed ? "armed" : hint ? "hint" : "label"} initial={{ opacity: 0, transform: tf({ y: 8 }) }} animate={{ opacity: 1, transform: tf() }} exit={{ opacity: 0, transform: tf({ y: -8 }), transition: fade }} transition={spring.snappy}>{armed ? confirmLabel : hint ? "Hold to send" : children}</m.span>
       </AnimatePresence>
     </m.span>)}
     <span className="sr-only" aria-live="polite">{armed ? confirmLabel : ""}</span>

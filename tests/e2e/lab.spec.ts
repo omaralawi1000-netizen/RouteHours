@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { QUIET_NOW, installClock } from "./helpers";
 
 // The hidden design lab: a quick check that its demos work and it never pulls in the old styles.
 test("lab: a shift starts, finishes into the week, and can be undone", async ({ page }) => {
@@ -192,6 +193,7 @@ test("lab: review & send shows the real sheet, edits a day in place and download
 test.describe("lab: smooth on a phone", () => {
   test.beforeEach(async ({ page }) => {
     await page.route(url => !["127.0.0.1", "localhost"].includes(url.hostname), route => route.abort());
+    await installClock(page, QUIET_NOW);
     await page.goto("/lab");
   });
 

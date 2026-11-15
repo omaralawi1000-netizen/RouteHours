@@ -1,8 +1,6 @@
 "use client";
 
-import { m } from "motion/react";
 import { Bus, Coffee } from "lucide-react";
-import { spring } from "./motion";
 import styles from "./route-line.module.css";
 import type { Break } from "./shift-line";
 
@@ -30,22 +28,23 @@ export default function RouteLine({ startedAt, now, breaks, usualMinutes, breakD
   const pct = (p: number) => `${Math.round(p * 10000) / 100}%`;
   return <div className={styles.wrap}>
     <div className={styles.line}>
-      {/* The light and the bus ride on full-width layers that slide by transform, so moving them never repaints the line. */}
-      <m.div className={styles.travel} initial={false} animate={{ x: pct(progress) }} transition={spring.smooth} aria-hidden="true">
-        <m.div className={styles.light} initial={false} animate={{ opacity: paused ? 0.35 : 1 }} transition={spring.smooth}/>
-      </m.div>
+      {/* The light and the bus ride on full-width layers that slide by a CSS transform transition, so
+          the browser moves them on its compositor and moving them never repaints the line. */}
+      <div className={styles.travel} style={{ transform: `translateX(${pct(progress)})` }} aria-hidden="true">
+        <div className={styles.light} style={{ opacity: paused ? 0.35 : 1 }}/>
+      </div>
       <div className={styles.ahead} style={{ left: pct(progress) }}/>
-      <m.div className={styles.done} initial={false} animate={{ scaleX: progress }} transition={spring.smooth}/>
+      <div className={styles.done} style={{ transform: `scaleX(${Math.round(progress * 10000) / 10000})` }}/>
       {breaks.map((b, i) => <div key={`g${i}`} className={styles.gap} style={{ left: pct(at(b.start)), width: pct(Math.max(0.012, at(b.end ?? minute) - at(b.start))) }}/>)}
       <span className={`${styles.stop} ${styles.end} ${styles.passed}`} style={{ left: "0%" }}/>
       {hours.map(p => <span key={p} className={`${styles.stop} ${p <= progress ? styles.passed : ""}`} style={{ left: pct(p) }}/>)}
       <span className={`${styles.stop} ${styles.end} ${arrived ? styles.passed : ""}`} style={{ left: "100%" }}/>
       {breaks.filter(b => b.end).map((b, i) => <span key={`b${i}`} className={`${styles.cafe} ${styles.cafeTaken}`} style={{ left: pct(at(b.start)) }} aria-hidden="true"><Coffee/></span>)}
       {breakDueAt !== null && !paused && breakDueAt > now && <span className={styles.cafe} style={{ left: pct(at(breakDueAt)) }} aria-hidden="true"><Coffee/></span>}
-      <m.div className={`${styles.travel} ${styles.front}`} initial={false} animate={{ x: pct(progress) }} transition={spring.smooth}>
-        <m.div className={styles.beam} initial={false} animate={{ opacity: paused ? 0 : 1 }} transition={spring.smooth} aria-hidden="true"/>
+      <div className={`${styles.travel} ${styles.front}`} style={{ transform: `translateX(${pct(progress)})` }}>
+        <div className={styles.beam} style={{ opacity: paused ? 0 : 1 }} aria-hidden="true"/>
         <span className={`${styles.bus} ${paused ? styles.parked : ""}`}>{paused ? <Coffee aria-hidden="true"/> : <Bus aria-hidden="true"/>}</span>
-      </m.div>
+      </div>
     </div>
     <div className={`${styles.ends} numeric`}><span>{startLabel}</span><span>{endLabel}</span></div>
   </div>;

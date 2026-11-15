@@ -7,7 +7,7 @@ import Glass from "../ui/glass";
 import SegmentedControl from "../ui/segmented-control";
 import StatusPill, { type WeekStatus } from "../ui/status-pill";
 import WeekStrip, { type WeekData } from "../ui/week-strip";
-import { spring } from "../ui/motion";
+import { spring, tf } from "../ui/motion";
 import { tick } from "../ui/haptics";
 import { item } from "../lab/stagger";
 import { AskCard, PayslipCard, type Logged } from "./ai";
@@ -33,7 +33,7 @@ export default function Week(props: {
     <m.section variants={item}><Glass blur className={styles.card}><WeekStrip weeks={props.weeks} index={props.index} onIndex={props.onIndex}/></Glass></m.section>
 
     <AnimatePresence initial={false}>
-      {props.warnings.length > 0 && <m.section key="warn" className={styles.alert} role="status" initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, transition: spring.exit }} transition={spring.settle}>
+      {props.warnings.length > 0 && <m.section key="warn" className={styles.alert} role="status" initial={{ opacity: 0, transform: tf({ y: -8 }) }} animate={{ opacity: 1, transform: tf() }} exit={{ opacity: 0, transition: spring.exit }} transition={spring.settle}>
         <span className={styles.alertIcon} aria-hidden="true"><TriangleAlert/></span>
         <div className={styles.alertText}>{props.warnings.map(w => <p key={w}>{w}</p>)}</div>
       </m.section>}
@@ -44,7 +44,7 @@ export default function Week(props: {
         <div className={styles.cardHead}><h2 className={`${styles.cardTitle} serif`}>Days</h2><span className={styles.cardMeta}>Tap a day to fix it</span></div>
         <ul className={styles.list}>
           {props.days.map(day => <li key={day.date}>
-            <m.button type="button" className={styles.shiftRow} whileTap={{ scale: 0.98 }} transition={spring.tap}
+            <button type="button" data-press className={styles.shiftRow}
               onClick={() => day.pieces.length ? props.onOpenShift(day.pieces[0].id) : props.onAddShift(day.date)}
               aria-label={day.pieces.length ? `Edit ${day.name}'s shift` : `Add a shift on ${day.name}`}>
               <span className={styles.rowDay}>{day.name}{day.today ? " · today" : ""}
@@ -52,7 +52,7 @@ export default function Week(props: {
               </span>
               <span className={`${styles.rowValue} numeric`}>{day.minutes ? hm(day.minutes) : day.mark ? "" : "–"}</span>
               <ChevronRight className={styles.chev} aria-hidden="true"/>
-            </m.button>
+            </button>
             {day.pieces.length > 1 && <div className={styles.morePieces}>
               {day.pieces.slice(1).map(p => <button key={p.id} type="button" className={styles.pieceLink} onClick={() => props.onOpenShift(p.id)}>Edit <span className="numeric">{p.start}–{p.end}</span></button>)}
             </div>}

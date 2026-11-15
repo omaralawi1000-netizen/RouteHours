@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
-import { AnimatePresence, LazyMotion, domMax, MotionConfig, m } from "motion/react";
+import { AnimatePresence, LazyMotion, domMax, MotionConfig, m, useReducedMotion } from "motion/react";
 import { CalendarDays, Download, RotateCcw, Settings2, Sun, WifiOff } from "lucide-react";
 import { addDays, dateInZone, dayLedger, mondayOf, periodMinutes, shiftWarnings, timeInZone, zonedInstant } from "@/lib/ledger";
 import { normalizeGoogleClientId } from "@/lib/google-auth";
@@ -28,6 +28,8 @@ import { SCENES, sceneForHour, type SceneId } from "../ui/wallpaper-scenes";
 import type { DayBar } from "../ui/week-bars";
 import type { WeekData } from "../ui/week-strip";
 import { setHaptics, tick } from "../ui/haptics";
+import { setReducedMotion, tf } from "../ui/motion";
+import { installPress } from "../ui/press";
 import { screen } from "../lab/stagger";
 import { NEED_KEY, useVoice, type Logged } from "./ai";
 import { isBool, usePref } from "./prefs";
@@ -54,7 +56,11 @@ const LAB_GEMINI_KEY = "routehours:lab-gemini";
 const isScene = (v: unknown): v is SceneId | "auto" => v === "auto" || SCENES.some(s => s.id === v);
 const isRate = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 2000;
 
-const dayMonth = (date: string, month = true) => new Intl.DateTimeFormat("en-GB", { day: "numeric", ...(month ? { month: "short" } : {}), timeZone: "UTC" }).format(Date.parse(`${date}T12:00:00Z`));
+// Made once: a new Intl.DateTimeFormat costs about a millisecond, and the week labels are drawn on every render.
+const dayOnly = new Intl.DateTimeFormat("en-GB", { day: "numeric", timeZone: "UTC" });
+const dayAndMonth = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
+const longDate = new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" });
+const dayMonth = (date: string, month = true) => (month ? dayAndMonth : dayOnly).format(Date.parse(`${date}T12:00:00Z`));
 /** "9 – 15 Nov", or "27 Oct – 2 Nov" across a month. */
 function rangeLabel(monday: string) {
   const sunday = addDays(monday, 6);
@@ -80,6 +86,10 @@ function Shell() {
   const [choice, setChoice, choiceRead] = usePref<SceneId | "auto">(SCENE_KEY, "auto", isScene, LEGACY_SCENE_KEY);
   const [blur, setBlur] = usePref("routehours:blur", true, isBool);
   const [reduce, setReduce] = usePref("routehours:reduce-motion", false, isBool);
+  // Set before the screens below render, so their springs already know (see setReducedMotion).
+  const phoneReduces = useReducedMotion();
+  setReducedMotion(reduce || Boolean(phoneReduces));
+  useEffect(() => { installPress(); }, []);
   const [haptics, setHapticsOn] = usePref("routehours:haptics", true, isBool);
   const [rate, setRate] = usePref(RATE_KEY, DEFAULT_RATE, isRate);
   const [travel, setTravel] = usePref(TRAVEL_KEY, 20, isTravel, LEGACY_TRAVEL_KEY);
@@ -165,7 +175,7 @@ function Shell() {
     return date > addDays(today, -7) ? LONG[index] : `${LONG[index].slice(0, 3)} ${dayMonth(date)}`;
   }
   const recent: RecentItem[] = sorted.slice(0, 5).map(s => ({ id: s.id, day: dayName(s.start), start: timeInZone(s.start, zone), end: timeInZone(s.end, zone), minutes: Math.round((Date.parse(s.end) - Date.parse(s.start)) / 60000), note: s.notes[0] }));
-  const dateLabel = useMemo(() => new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" }).format(Date.parse(`${today}T12:00:00Z`)), [today]);
+  const dateLabel = useMemo(() => longDate.format(Date.parse(`${today}T12:00:00Z`)), [today]);
 
   // Week tab: the chosen week, its days and its timesheet status.
   const [weekIndex, setWeekIndex] = useState(WEEKS_BACK - 1);
@@ -337,7 +347,7 @@ function Shell() {
             </AnimatePresence>
           </div>
 
-          <AnimatePresence>{ready && !online && <m.p key="offline" className={styles.offline} role="status" initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}><WifiOff aria-hidden="true"/> Offline · still saving on this phone</m.p>}</AnimatePresence>
+          <AnimatePresence>{ready && !online && <m.p key="offline" className={styles.offline} role="status" initial={{ opacity: 0, transform: tf({ y: -8 }) }} animate={{ opacity: 1, transform: tf() }} exit={{ opacity: 0 }}><WifiOff aria-hidden="true"/> Offline · still saving on this phone</m.p>}</AnimatePresence>
           {ready && <TabBar value={tab} onChange={changeTab} tabs={[{ id: "today", label: "Today", icon: <Sun/> }, { id: "week", label: "Week", icon: <CalendarDays/> }, { id: "settings", label: "Settings", icon: <Settings2/> }]}/>}
 
           <ShiftSheet shift={editing?.shift ?? null} isNew={!!editing?.isNew} shifts={shifts} zone={zone} onClose={() => setEditing(null)} onSave={saveShift} onDelete={deleteShift}/>

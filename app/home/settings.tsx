@@ -16,7 +16,6 @@ import Glass from "../ui/glass";
 import Toggle from "../ui/toggle";
 import Wallpaper from "../ui/wallpaper";
 import { SCENES, type SceneId } from "../ui/wallpaper-scenes";
-import { spring } from "../ui/motion";
 import { item } from "../lab/stagger";
 import { GeminiCard } from "./ai";
 import Reminders from "./reminders";
@@ -68,11 +67,12 @@ export default function Settings({ say, look, rate, onRate, travel, onTravel, ba
         <div className={styles.picker} role="radiogroup" aria-label="Wallpaper">
           {SCENES.map(option => {
             const selected = look.choice === option.id;
-            return <m.button key={option.id} type="button" role="radio" aria-checked={selected} className={styles.pick} onClick={() => look.onScene(option.id)} whileTap={{ scale: 0.95 }} transition={spring.tap}>
+            // Every thumbnail has its ring; CSS fades the chosen one in on the compositor.
+            return <button key={option.id} type="button" role="radio" aria-checked={selected} data-press className={styles.pick} onClick={() => look.onScene(option.id)}>
               <span className={styles.thumb}><Wallpaper thumb scene={option.id} state="idle"/></span>
-              {selected && <m.span layoutId="wallpaper-ring" className={styles.ring} transition={spring.snappy}><Check aria-hidden="true"/></m.span>}
+              <span className={styles.ring} aria-hidden="true"><Check/></span>
               <span className={styles.pickName}>{option.name}</span>
-            </m.button>;
+            </button>;
           })}
         </div>
         <Row label="Live blur" hint="Off saves battery"><Toggle label="Live blur" checked={look.blur} onChange={look.onBlur}/></Row>
