@@ -1,15 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import type { Shift } from "@/lib/time";
 import { templateShift } from "@/lib/templates";
-import { dateInZone } from "@/lib/ledger";
+import { dateInZone, timeInZone } from "@/lib/ledger";
 import { useAppData } from "../state/app-data";
 import { cleanNoteDraft } from "../features/format";
 import type { Break } from "../ui/shift-line";
 import type { ToastMessage } from "../ui/toast";
 import { tick } from "../ui/haptics";
-import { hm, partsFrom } from "./usual";
+import { AUTO_FINISH_AFTER, hm, partsFrom, usualEnd, type DayPart } from "./usual";
 
 /**
  * A "run" is one stretch on the road, from Start to Finish. A break saves the part driven so far as
@@ -206,3 +206,33 @@ export function useRun(say: Say) {
   };
 }
 export type RunControls = ReturnType<typeof useRun>;
+
+/**
+ * Auto-stop: a usual run nobody finished closes itself an hour after its usual end, logged as ending at
+ * the usual time. It runs with the run itself, not inside the Today tab, so it still fires while Week or
+ * Settings is open. "Still driving" turns it off for the run. The usual end is on the run's own date (the
+ * next day for a part that runs past midnight), so a run left open overnight never finishes on the next day's clock.
+ */
+export function useAutoFinish(run: RunControls, parts: DayPart[], zone: string) {
+  const part = parts.find(p => run.partId ? p.id === run.partId : p.label === run.label);
+  const usualEndAt = run.running && part ? usualEnd(run.startedAt, part, zone) : 0;
+  const activeStart = run.active ? Date.parse(run.active.start) : 0;
+  const watching = run.running && !run.onBreak && !run.stillDriving && usualEndAt > activeStart + 10 * 60000;
+  const finish = useEffectEvent(() => run.finish(usualEndAt, `Finished on its own at ${timeInZone(usualEndAt, zone)}`));
+  const fired = useRef(0);
+  useEffect(() => {
+    if (!watching) return;
+    // A cheap check every few seconds and on wake, rather than one long timer: a phone asleep for
+    // hours can hand a long timer back late. Nothing re-renders until it is actually due.
+    const check = () => {
+      const now = Date.now();
+      if (fired.current === activeStart || now < usualEndAt + AUTO_FINISH_AFTER * 60000 || now >= usualEndAt + 6 * 3600000) return;
+      fired.current = activeStart;
+      finish();
+    };
+    check();
+    const timer = window.setInterval(check, 5000);
+    document.addEventListener("visibilitychange", check);
+    return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", check); };
+  }, [watching, usualEndAt, activeStart]);
+}

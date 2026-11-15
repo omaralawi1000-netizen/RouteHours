@@ -1,5 +1,5 @@
 import { DEFAULT_TEMPLATES, type ShiftTemplate } from "@/lib/templates";
-import { timeInZone } from "@/lib/ledger";
+import { addDays, dateInZone, timeInZone, zonedInstant } from "@/lib/ledger";
 
 /** One part of the usual working day, taken from a saved shift template. */
 export type DayPart = { id: string; label: string; start: string; end: string; minutes: number };
@@ -40,6 +40,14 @@ export function nextPart(parts: DayPart[], now: number): DayPart | null {
 export function inPart(part: DayPart, now: number, before = 0) {
   const from = toMinutes(part.start) - before, to = toMinutes(part.start) + part.minutes;
   return [now - 1440, now, now + 1440].some(t => t >= from && t <= to);
+}
+
+/** When a part usually ends, on the date the run began. */
+export function usualEnd(startedAt: number, part: DayPart, zone: string) {
+  const date = dateInZone(startedAt, zone);
+  // An overnight part ends tomorrow, unless the run began after midnight (00:10 on a 22:00–06:00 part): then today.
+  const nextDay = part.end < part.start && zoneMinutes(startedAt, zone) > toMinutes(part.end);
+  try { return Date.parse(zonedInstant(`${nextDay ? addDays(date, 1) : date}T${part.end}`, zone)); } catch { return 0; }
 }
 
 /** Minutes after a run's usual end before an unfinished shift finishes itself. */

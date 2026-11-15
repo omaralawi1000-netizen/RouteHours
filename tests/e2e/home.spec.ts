@@ -278,3 +278,20 @@ test.describe("home: installing on an iPhone", () => {
     await expect(page.getByText(/In Chrome, tap ⋮/)).toHaveCount(0);
   });
 });
+
+test("home: a usual run nobody finished still stops on its own while the Week tab is open", async ({ page }) => {
+  // 06:45 on Wednesday 11 November in Copenhagen, with the 06:45–08:10 + 12:25–14:45 split day.
+  await page.route(url => !["127.0.0.1", "localhost"].includes(url.hostname), route => route.abort());
+  await page.clock.install({ time: new Date("2026-11-11T05:45:00Z") });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Settings", exact: true }).last().click();
+  await page.getByRole("button", { name: "Use these" }).click();
+  await toast(page, "Usual shifts saved");
+  await page.getByRole("button", { name: "Today", exact: true }).click();
+  await page.getByRole("button", { name: "Start your morning shift" }).click();
+  await page.getByRole("button", { name: "Week", exact: true }).click();
+  // 09:12, more than an hour past the usual 08:10 end, with Today never shown again.
+  await page.clock.fastForward(147 * 60_000);
+  await toast(page, "Finished on its own at 08:10");
+  await expect(page.getByText("06:45–08:10")).toBeVisible();
+});

@@ -32,7 +32,7 @@ import { screen } from "../lab/stagger";
 import { NEED_KEY, useVoice, type Logged } from "./ai";
 import { isBool, usePref } from "./prefs";
 import { isTravel, LEGACY_TRAVEL_KEY, TRAVEL_KEY } from "./reminders";
-import { useRun, type NoteTarget } from "./run";
+import { useAutoFinish, useRun, type NoteTarget } from "./run";
 import { downloadOriginalData, recoverFromBackup } from "../screens/boot-screens";
 import SendSheet from "./send-sheet";
 import Settings from "./settings";
@@ -127,6 +127,7 @@ function Shell() {
   const today = useToday(zone);
   const currentMonday = mondayOf(today);
   const parts = useMemo(() => partsFrom(templates), [templates]);
+  useAutoFinish(run, parts, zone);
   const clientId = normalizeGoogleClientId(googleClientId) || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "";
   const google = useGoogleSession(clientId, "google");
   const backups = useBackups({ clientId, online, today, onNotice: say, onRestored: merged => { setEditing(null); if (!merged) run.reset(); } });
