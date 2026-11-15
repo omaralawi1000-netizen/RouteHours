@@ -246,3 +246,35 @@ test("home: Review & send keeps its week when Sunday turns into Monday while it 
   await expect(sheet.getByText("09.11.2026 – 15.11.2026", { exact: false })).toBeVisible();
   await expect(sheet.getByText("16.11.2026", { exact: false })).toHaveCount(0);
 });
+
+test("home: Review & send can fix one time of a shift that ends in the hour repeated when the clocks go back", async ({ page }) => {
+  // 01:30 summer time on Sunday 25 October 2026; the shift runs two real hours and finishes at 02:30 winter time.
+  await page.route(url => !["127.0.0.1", "localhost"].includes(url.hostname), route => route.abort());
+  await page.clock.install({ time: new Date("2026-10-24T23:30:00Z") });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Start shift" }).click();
+  await page.clock.fastForward(120 * 60_000);
+  await page.getByRole("button", { name: "Finish shift" }).click();
+  await toast(page, "Shift saved · 2:00");
+  await page.getByRole("button", { name: "Week", exact: true }).click();
+  await page.getByRole("button", { name: "Review & send" }).click();
+  const sheet = page.getByRole("dialog", { name: "Review & send" });
+  await sheet.getByRole("button", { name: /^Sun/ }).click();
+  // Fixing only the start keeps the recorded 02:30 finish instead of refusing it as ambiguous.
+  await sheet.getByLabel("Start", { exact: true }).fill("01:45");
+  await expect(page.getByText(/occurs twice/)).toHaveCount(0);
+  await expect(sheet.getByRole("button", { name: /^Sun/ })).toContainText("01:45–02:30");
+  await expect(sheet.getByRole("button", { name: /^Sun/ })).toContainText("1:45");
+});
+
+test.describe("home: installing on an iPhone", () => {
+  test.use({ userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1" });
+
+  test("Install explains Safari's Share menu, since iPhones never offer an install prompt", async ({ page }) => {
+    await openHome(page);
+    await page.getByRole("button", { name: "Settings", exact: true }).last().click();
+    await page.getByRole("button", { name: "Install" }).click();
+    await expect(page.getByText(/In Safari, tap Share/)).toBeVisible();
+    await expect(page.getByText(/In Chrome, tap ⋮/)).toHaveCount(0);
+  });
+});

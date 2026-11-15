@@ -166,9 +166,12 @@ function Body({ onClose, week, zone, shifts, running, profile, onProfile, detail
   function retime(shift: Shift, date: string, which: "start" | "end", value: string) {
     if (!/^\d\d:\d\d$/.test(value)) return;
     const startTime = which === "start" ? value : timeInZone(shift.start, zone), endTime = which === "end" ? value : timeInZone(shift.end, zone);
+    const endDate = toMinutes(endTime) <= toMinutes(startTime) ? addDays(date, 1) : date;
     try {
-      const start = zonedInstant(`${date}T${startTime}`, zone, true);
-      const end = zonedInstant(`${toMinutes(endTime) <= toMinutes(startTime) ? addDays(date, 1) : date}T${endTime}`, zone, true);
+      // The time you didn't touch keeps its recorded instant, so a shift in the hour repeated when the
+      // clocks go back stays editable (rebuilding that time would be refused as ambiguous).
+      const start = which === "end" && date === dateInZone(shift.start, zone) ? shift.start : zonedInstant(`${date}T${startTime}`, zone, true);
+      const end = which === "start" && endDate === dateInZone(shift.end, zone) ? shift.end : zonedInstant(`${endDate}T${endTime}`, zone, true);
       onShifts(list => list.map(s => s.id === shift.id ? { ...s, start, end, summary: undefined, summaryStatus: undefined, summaryError: undefined } : s));
     } catch (e) { say(e instanceof Error ? e.message : "Check that time"); }
   }

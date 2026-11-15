@@ -208,6 +208,9 @@ function GoogleCard({ clientId, google, online, say }: { clientId: string; googl
   </Glass>;
 }
 
+/** iPhones and iPads never offer an install prompt; Safari's Share menu adds the app instead. */
+const onIos = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+
 function DataCard({ backups, saveStatus, csv, say, install, clientId }: { backups: Backups; saveStatus: string; csv: (detailed: boolean) => void; say: Say; install: { installed: boolean; install: () => Promise<void>; instructionsOpen: boolean }; clientId: string }) {
   const file = useRef<HTMLInputElement>(null);
   const daily = backups.dailyBackup;
@@ -223,6 +226,6 @@ function DataCard({ backups, saveStatus, csv, say, install, clientId }: { backup
     {clientId && daily.needsConnection && <a className={styles.link} href="/classic">Connect Drive in the classic screens</a>}
     <Row label="Spreadsheet" hint="Every shift as a CSV file"><div className={styles.inline}><Button variant="glass" size="small" icon={<FileText/>} onClick={() => csv(false)}>CSV</Button><Button variant="glass" size="small" onClick={() => csv(true)}>With notes</Button></div></Row>
     <Row label="Protect storage" hint="Ask the browser never to clear it"><Button variant="glass" size="small" onClick={async () => { const granted = await navigator.storage?.persist?.(); say(granted ? "Storage protected. Keep a backup file too." : "The browser manages storage here. Keep a backup file."); }}>Protect</Button></Row>
-    {!install.installed && <Row label="Add to home screen" hint={install.instructionsOpen ? "In Chrome, tap ⋮ and then Add to Home screen." : "Opens like an app, works offline"}><Button variant="glass" size="small" icon={<Smartphone/>} onClick={() => void install.install()}>Install</Button></Row>}
+    {!install.installed && <Row label="Add to home screen" hint={install.instructionsOpen ? (onIos() ? "In Safari, tap Share and then Add to Home Screen." : "In Chrome, tap ⋮ and then Add to Home screen.") : "Opens like an app, works offline"}><Button variant="glass" size="small" icon={<Smartphone/>} onClick={() => void install.install()}>Install</Button></Row>}
   </Glass>;
 }
