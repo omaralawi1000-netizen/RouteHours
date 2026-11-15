@@ -40,7 +40,9 @@
  * Day dark on amber 7.3:1, secondary 5.3:1.
  */
 .look {
-  --font-sans: var(--font-jakarta), var(--font-inter-tight), system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* Every font variable needs a fallback: the app at / loads only Jakarta, and one undefined var()
+     would void the whole list and drop the page to the browser's default serif. */
+  --font-sans: var(--font-jakarta, system-ui), var(--font-inter-tight, system-ui), system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-serif: var(--font-sans);
   --title-style: normal;
   --title-weight: 600;

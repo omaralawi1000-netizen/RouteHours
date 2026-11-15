@@ -11,7 +11,7 @@ const WINDOWS: [number, number][] = [[22, 146], [36, 128], [60, 108], [66, 122],
 export const SCENES: Scene[] = [
   {
     id: "dusk", name: "Dusk Hills", tone: "night", road: true, stars: true,
-    colors: { "--sky-top": "#090B1C", "--sky-mid": "#1C1638", "--horizon": "#4A2147", "--ember": "#B2452F", "--aura": "#3B2C7A", "--aura-2": "#6A2C5E", "--hill-far": "#2A1E3E", "--hill-mid": "#191329", "--hill-near": "#0E0B18" },
+    colors: { "--status": "#281F55", "--sky-top": "#090B1C", "--sky-mid": "#1C1638", "--horizon": "#4A2147", "--ember": "#B2452F", "--aura": "#3B2C7A", "--aura-2": "#6A2C5E", "--hill-far": "#2A1E3E", "--hill-mid": "#191329", "--hill-near": "#0E0B18" },
     running: { "--horizon": "#6E2A3A", "--ember": "#E0742F", "--aura-2": "#9A3D3A", "--hill-far": "#3A2236" },
     art: <>
       <path className={styles.far} d="M0 132 Q22 112 44 120 Q66 96 92 108 Q118 70 146 100 Q168 86 188 104 Q214 64 246 98 Q270 84 292 102 Q322 74 352 100 Q378 90 400 106 V320 H0Z"/>
@@ -23,7 +23,7 @@ export const SCENES: Scene[] = [
   },
   {
     id: "aurora", name: "Aurora", tone: "night", stars: true,
-    colors: { "--sky-top": "#03101A", "--sky-mid": "#062430", "--horizon": "#0B3A3F", "--ember": "#1FAF8C", "--aura": "#6B3FD1", "--aura-2": "#19C29A", "--hill-far": "#0A2A33", "--hill-mid": "#061C24", "--hill-near": "#030E14" },
+    colors: { "--status": "#412D89", "--sky-top": "#03101A", "--sky-mid": "#062430", "--horizon": "#0B3A3F", "--ember": "#1FAF8C", "--aura": "#6B3FD1", "--aura-2": "#19C29A", "--hill-far": "#0A2A33", "--hill-mid": "#061C24", "--hill-near": "#030E14" },
     running: { "--ember": "#E0A040", "--aura-2": "#3FD6A0", "--horizon": "#1B3F3A" },
     art: <>
       <path className={styles.ribbon} d="M-20 70 C60 20 120 110 200 60 S330 10 420 60" style={{ stroke: "var(--aura-2)" }}/>
@@ -36,8 +36,8 @@ export const SCENES: Scene[] = [
   },
   {
     id: "ocean", name: "Ocean Dawn", tone: "day",
-    colors: { "--sky-top": "#A9BEE8", "--sky-mid": "#E9C6DA", "--horizon": "#FFD1AE", "--ember": "#FFB38A", "--aura": "#C4B5F2", "--aura-2": "#F7B2C9", "--hill-far": "#9FB0D8", "--hill-mid": "#7F93C8", "--hill-near": "#5E72AE" },
-    running: { "--sky-top": "#E9C3CF", "--horizon": "#FFC08C", "--ember": "#FF9E5E" },
+    colors: { "--status": "#BAB9EE", "--sky-top": "#A9BEE8", "--sky-mid": "#E9C6DA", "--horizon": "#FFD1AE", "--ember": "#FFB38A", "--aura": "#C4B5F2", "--aura-2": "#F7B2C9", "--hill-far": "#9FB0D8", "--hill-mid": "#7F93C8", "--hill-near": "#5E72AE" },
+    running: { "--status": "#D3BAE4", "--sky-top": "#E9C3CF", "--horizon": "#FFC08C", "--ember": "#FF9E5E" },
     art: <>
       <circle className={styles.sun} cx="200" cy="150" r="34"/>
       <path className={styles.sea} d="M0 160 H400 V320 H0Z"/>
@@ -49,7 +49,7 @@ export const SCENES: Scene[] = [
   },
   {
     id: "city", name: "City Night", tone: "night", stars: false,
-    colors: { "--sky-top": "#060A1E", "--sky-mid": "#101A44", "--horizon": "#2B2A6B", "--ember": "#E0558A", "--aura": "#2747B8", "--aura-2": "#8A3FC7", "--hill-far": "#131A3D", "--hill-mid": "#0C1130", "--hill-near": "#070A1E" },
+    colors: { "--status": "#1B2F7C", "--sky-top": "#060A1E", "--sky-mid": "#101A44", "--horizon": "#2B2A6B", "--ember": "#E0558A", "--aura": "#2747B8", "--aura-2": "#8A3FC7", "--hill-far": "#131A3D", "--hill-mid": "#0C1130", "--hill-near": "#070A1E" },
     running: { "--ember": "#FF9A3C", "--aura-2": "#C24A7A", "--horizon": "#4A2A5E" },
     art: <>
       <path className={styles.far} d="M0 170 h18 v-30 h14 v-22 h10 v22 h16 v-48 h22 v48 h12 v-20 h18 v34 h14 v-60 h8 v-14 h6 v14 h8 v60 h18 v-36 h20 v-18 h12 v18 h10 v46 h16 v-70 h24 v70 h14 v-30 h18 v-16 h14 v46 h18 v-42 h20 v42 h12 v-24 h16 v24 V320 H0Z"/>
@@ -62,8 +62,8 @@ export const SCENES: Scene[] = [
   },
   {
     id: "desert", name: "Desert Gold", tone: "day", road: true,
-    colors: { "--sky-top": "#F2C9A0", "--sky-mid": "#F6D9B0", "--horizon": "#FFE0A8", "--ember": "#FFB060", "--aura": "#F7B9A0", "--aura-2": "#FFD08A", "--hill-far": "#E2A877", "--hill-mid": "#CF8A5A", "--hill-near": "#B06C44" },
-    running: { "--ember": "#FF8E3C", "--horizon": "#FFC07A", "--sky-top": "#F0B48A" },
+    colors: { "--status": "#F5C0A0", "--sky-top": "#F2C9A0", "--sky-mid": "#F6D9B0", "--horizon": "#FFE0A8", "--ember": "#FFB060", "--aura": "#F7B9A0", "--aura-2": "#FFD08A", "--hill-far": "#E2A877", "--hill-mid": "#CF8A5A", "--hill-near": "#B06C44" },
+    running: { "--status": "#F4B797", "--ember": "#FF8E3C", "--horizon": "#FFC07A", "--sky-top": "#F0B48A" },
     art: <>
       <circle className={styles.sun} cx="290" cy="112" r="26"/>
       <path className={styles.far} d="M0 150 Q60 128 130 146 Q190 160 250 138 Q320 116 400 140 V320 H0Z"/>
@@ -74,7 +74,7 @@ export const SCENES: Scene[] = [
   },
   {
     id: "fjord", name: "Fjord Moon", tone: "night", stars: true,
-    colors: { "--sky-top": "#050B18", "--sky-mid": "#0E2142", "--horizon": "#27507A", "--ember": "#5D8FC4", "--aura": "#1C3D7A", "--aura-2": "#3E6EA8", "--hill-far": "#1A3354", "--hill-mid": "#10223D", "--hill-near": "#081325" },
+    colors: { "--status": "#132A54", "--sky-top": "#050B18", "--sky-mid": "#0E2142", "--horizon": "#27507A", "--ember": "#5D8FC4", "--aura": "#1C3D7A", "--aura-2": "#3E6EA8", "--hill-far": "#1A3354", "--hill-mid": "#10223D", "--hill-near": "#081325" },
     running: { "--ember": "#E09A50", "--horizon": "#4A4E70", "--aura-2": "#8A6A80" },
     art: <>
       <circle className={styles.moon} cx="290" cy="-150" r="12"/>
@@ -94,6 +94,14 @@ export const SCENES: Scene[] = [
 export const SCENE_HOURS: [from: number, to: number, scene: SceneId][] = [[5, 10, "ocean"], [10, 16, "desert"], [16, 21, "dusk"]];
 export const NIGHT_SCENE: SceneId = "fjord";
 export function sceneForHour(hour: number): SceneId { return SCENE_HOURS.find(([from, to]) => hour >= from && hour < to)?.[2] ?? NIGHT_SCENE; }
+
+/**
+ * The phone's status bar colour for a scene: the colour the top edge of its wallpaper starts with,
+ * warmer on shift for the day scenes, so the bar and the app read as one surface.
+ */
+export function statusColor(scene: Scene, running: boolean) {
+  return (running && scene.running["--status"]) || scene.colors["--status"];
+}
 
 export function sceneStyle(scene: Scene, running: boolean): CSSProperties {
   return { ...scene.colors, ...(running ? scene.running : {}) } as CSSProperties;
