@@ -27,4 +27,9 @@ test("reads Gemini's payslip answer and drops anything that isn't one", () => {
   assert.equal(payslipFrom('{"isPayslip":true,"hours":null,"grossPay":null}'), null);
   assert.equal(payslipFrom("not json"), null);
   assert.equal(payslipFrom('{"isPayslip":true,"periodStart":"Oct","hours":-3,"grossPay":9000}')?.periodStart, null);
+  // Well formed but not a real day: the comparison would throw on it, so it counts as unread.
+  const impossible = payslipFrom('{"isPayslip":true,"periodStart":"2026-02-30","periodEnd":"2026-13-01","hours":62.5,"grossPay":11250}');
+  assert.equal(impossible?.periodStart, null);
+  assert.equal(impossible?.periodEnd, null);
+  assert.equal(payslipFrom('{"isPayslip":true,"periodStart":"2028-02-29","hours":1}')?.periodStart, "2028-02-29");
 });

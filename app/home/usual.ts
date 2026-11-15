@@ -1,5 +1,6 @@
-import { DEFAULT_TEMPLATES, type ShiftTemplate } from "@/lib/templates";
-import { addDays, dateInZone, timeInZone, zonedInstant } from "@/lib/ledger";
+// Relative with extensions, so the unit tests can load this file in Node as it is.
+import { DEFAULT_TEMPLATES, type ShiftTemplate } from "../../lib/templates.ts";
+import { addDays, dateInZone, timeInZone, zonedInstant } from "../../lib/ledger.ts";
 
 /** One part of the usual working day, taken from a saved shift template. */
 export type DayPart = { id: string; label: string; start: string; end: string; minutes: number };
@@ -21,6 +22,7 @@ export const dayMinutes = (parts: DayPart[]) => parts.reduce((sum, p) => sum + p
 /**
  * The part that comes next, for the quick-start chip. A part stays "next" until halfway to the
  * following one (Morning until about 10:15), and the last one until 45 minutes before it ends.
+ * Late in the evening, tomorrow's first part counts once it is 45 minutes away.
  */
 export function nextPart(parts: DayPart[], now: number): DayPart | null {
   // After midnight, last night's overnight part (22:00–06:00) comes before any daytime part.
@@ -33,7 +35,9 @@ export function nextPart(parts: DayPart[], now: number): DayPart | null {
     const cutoff = following ? (end + toMinutes(following.start)) / 2 : end - 45;
     if (now < cutoff) return part;
   }
-  return null;
+  // A part just after midnight (00:02) is next from 45 minutes before it, as its Start reminder
+  // (23:57) and the quick start already expect. Earlier in the evening the day is still ending.
+  return parts.find(p => { const start = toMinutes(p.start) + 1440; return now < start && start - now <= 45; }) ?? null;
 }
 
 /** Whether a clock time falls between `before` minutes ahead of a part's start and its usual end, also across midnight. */
@@ -45,8 +49,10 @@ export function inPart(part: DayPart, now: number, before = 0) {
 /** When a part usually ends, on the date the run began. */
 export function usualEnd(startedAt: number, part: DayPart, zone: string) {
   const date = dateInZone(startedAt, zone);
+  const began = zoneMinutes(startedAt, zone);
   // An overnight part ends tomorrow, unless the run began after midnight (00:10 on a 22:00–06:00 part): then today.
-  const nextDay = part.end < part.start && zoneMinutes(startedAt, zone) > toMinutes(part.end);
+  // So does a part just after midnight that was started the evening before (23:57 for 00:02).
+  const nextDay = (part.end < part.start && began > toMinutes(part.end)) || began - toMinutes(part.start) > 720;
   try { return Date.parse(zonedInstant(`${nextDay ? addDays(date, 1) : date}T${part.end}`, zone)); } catch { return 0; }
 }
 

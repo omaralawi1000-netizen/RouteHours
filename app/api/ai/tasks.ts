@@ -50,7 +50,12 @@ export function checkTask(value: unknown): AiTask | { error: string } {
   }
 }
 
-const date = (value: unknown) => typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
+// A real calendar day only: "2026-02-30" is well formed but would throw later in the comparison.
+function date(value: unknown) {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const day = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(day.getTime()) && day.toISOString().startsWith(value) ? value : null;
+}
 const amount = (value: unknown, max: number) => typeof value === "number" && Number.isFinite(value) && value > 0 && value < max ? value : null;
 
 /** Gemini's JSON answer, checked. Null when it isn't a payslip or nothing useful was read. */
