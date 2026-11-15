@@ -1,0 +1,20 @@
+.dock {
+  position: fixed; left: 50%; bottom: calc(14px + env(safe-area-inset-bottom)); z-index: 35; translate: -50% 0;
+  display: grid; grid-template-columns: repeat(var(--tabs), 1fr); gap: 4px; padding: 6px; border-radius: 999px;
+  background: var(--glass-strong); -webkit-backdrop-filter: blur(20px) saturate(1.35); backdrop-filter: blur(20px) saturate(1.35);
+  box-shadow: inset 0 var(--hairline) 0 var(--glass-edge), 0 0 0 var(--hairline) var(--line), var(--glass-shadow);
+}
+:global([data-blur="off"]) .dock { -webkit-backdrop-filter: none; backdrop-filter: none; background: var(--bg); }
+.tab { --press: 0.94; position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 48px; padding: 0 16px; border: 0; border-radius: 999px; background: none; color: var(--text-2); font-weight: 500; font-size: 15px; cursor: pointer; transition: color 0.25s ease, scale var(--spring-tap-ms) var(--spring-tap); -webkit-tap-highlight-color: transparent; }
+.active { color: var(--text); }
+/* One pill for the whole dock, one tab wide, moved by the active index. */
+.pill { position: absolute; top: 6px; bottom: 6px; left: 6px; width: calc((100% - 12px - (var(--tabs) - 1) * 4px) / var(--tabs)); border-radius: 999px; background: var(--press); box-shadow: inset 0 var(--hairline) 0 var(--glass-edge), var(--lift-shadow, 0 0 #0000);
+  transform: translateX(calc(var(--at) * (100% + 4px))); transition: transform var(--spring-settle-ms) var(--spring-settle); will-change: transform; }
+.active .icon { animation: hop 0.36s cubic-bezier(0.2, 0.8, 0.2, 1); }
+@keyframes hop { 0%, 100% { transform: none; } 40% { transform: translateY(-3px) scale(1.12); } }
+:global([data-motion="reduced"]) .pill { transition: none; }
+:global([data-motion="reduced"]) .active .icon { animation: none; }
+@media (prefers-reduced-motion: reduce) { .pill { transition: none; } .active .icon { animation: none; } }
+.active .icon { color: var(--accent); }
+.icon, .label { position: relative; display: inline-flex; }
+.icon svg { width: 20px; height: 20px; }

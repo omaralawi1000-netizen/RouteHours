@@ -1,0 +1,182 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- RouteHours, full bleed. Everything that matters sits inside the central circle (r 410) that
+       Android's adaptive icon masks keep, so it works as a maskable icon as is. -->
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#110E2C"/>
+      <stop offset="0.38" stop-color="#2A1C58"/>
+      <stop offset="0.56" stop-color="#5A3478"/>
+      <stop offset="0.64" stop-color="#B9587A"/>
+    </linearGradient>
+    <radialGradient id="sun" cx="0.5" cy="0.62" r="0.62">
+      <stop offset="0" stop-color="#FFE3A3"/>
+      <stop offset="0.45" stop-color="#FFB45E"/>
+      <stop offset="0.8" stop-color="#F0784A"/>
+      <stop offset="1" stop-color="#D45A5A"/>
+    </radialGradient>
+    <radialGradient id="halo" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#FFB45E" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#FFB45E" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="hillFar" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6E3E84"/>
+      <stop offset="1" stop-color="#3E2766"/>
+    </linearGradient>
+    <linearGradient id="hillNear" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3B2762"/>
+      <stop offset="1" stop-color="#21173F"/>
+    </linearGradient>
+    <linearGradient id="road" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2A1E4C"/>
+      <stop offset="1" stop-color="#140F2B"/>
+    </linearGradient>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFE7B5"/>
+      <stop offset="0.5" stop-color="#FFC56A"/>
+      <stop offset="1" stop-color="#F59A2E"/>
+    </linearGradient>
+    <linearGradient id="bodyShade" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#B85F12" stop-opacity="0.35"/>
+      <stop offset="0.14" stop-color="#B85F12" stop-opacity="0"/>
+      <stop offset="0.86" stop-color="#B85F12" stop-opacity="0"/>
+      <stop offset="1" stop-color="#B85F12" stop-opacity="0.35"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1C1540"/>
+      <stop offset="0.7" stop-color="#3A2A6C"/>
+      <stop offset="1" stop-color="#7A4A86"/>
+    </linearGradient>
+    <radialGradient id="lamp" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="0.45" stop-color="#FFF4D2"/>
+      <stop offset="1" stop-color="#FFC66E"/>
+    </radialGradient>
+    <radialGradient id="flare" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#FFF1C9" stop-opacity="0.95"/>
+      <stop offset="0.25" stop-color="#FFD58A" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#FFB45E" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="beam" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFD58A" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#FFB45E" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="dark" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3B2C63"/>
+      <stop offset="1" stop-color="#211842"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Sky with a few stars -->
+  <rect width="1024" height="1024" fill="url(#sky)"/>
+  <g fill="#FFF3DA">
+    <circle cx="228" cy="214" r="5" opacity="0.9"/>
+    <circle cx="318" cy="150" r="3" opacity="0.6"/>
+    <circle cx="742" cy="186" r="4" opacity="0.8"/>
+    <circle cx="820" cy="268" r="3" opacity="0.55"/>
+    <circle cx="640" cy="122" r="2.5" opacity="0.5"/>
+    <circle cx="170" cy="330" r="2.5" opacity="0.5"/>
+    <circle cx="868" cy="388" r="2" opacity="0.45"/>
+    <path d="M300 268 l5 -14 l5 14 l14 5 l-14 5 l-5 14 l-5 -14 l-14 -5z" opacity="0.85"/>
+  </g>
+
+  <!-- The low sun, ringed like a headlight -->
+  <circle cx="512" cy="620" r="470" fill="#FFB45E" opacity="0.05"/>
+  <circle cx="512" cy="620" r="400" fill="#FFB45E" opacity="0.07"/>
+  <circle cx="512" cy="620" r="330" fill="url(#sun)"/>
+  <circle cx="512" cy="620" r="330" fill="none" stroke="#FFE7B8" stroke-opacity="0.35" stroke-width="4"/>
+
+  <!-- Hills -->
+  <path d="M0 640 C 120 560 230 548 340 590 C 420 620 470 626 520 618 C 610 602 700 540 820 548 C 910 554 970 590 1024 620 L1024 1024 L0 1024Z" fill="url(#hillFar)"/>
+  <path d="M0 700 C 140 646 260 640 380 668 C 450 684 480 690 512 690 C 560 690 610 676 680 660 C 800 634 920 650 1024 690 L1024 1024 L0 1024Z" fill="url(#hillNear)"/>
+
+  <!-- The road towards you, lit by the bus -->
+  <path d="M486 690 L538 690 L1024 1024 L0 1024Z" fill="url(#road)"/>
+  <path d="M486 690 L0 1024" stroke="#FFD9A0" stroke-opacity="0.45" stroke-width="8"/>
+  <path d="M538 690 L1024 1024" stroke="#FFD9A0" stroke-opacity="0.45" stroke-width="8"/>
+  <path d="M352 792 L672 792 L900 1024 L124 1024Z" fill="url(#beam)" opacity="0.55"/>
+  <ellipse cx="512" cy="840" rx="300" ry="70" fill="url(#halo)" opacity="0.7"/>
+  <g fill="#FFCF7E">
+    <path d="M506 800 L518 800 L522 850 L502 850Z" opacity="0.9"/>
+    <path d="M500 884 L524 884 L530 950 L494 950Z"/>
+    <path d="M492 990 L532 990 L536 1024 L488 1024Z"/>
+  </g>
+
+  <!-- Shadow under the bus -->
+  <ellipse cx="512" cy="792" rx="230" ry="20" fill="#0B0820" opacity="0.6"/>
+
+  <!-- Wheels -->
+  <rect x="356" y="736" width="70" height="62" rx="18" fill="#140F2B"/>
+  <rect x="598" y="736" width="70" height="62" rx="18" fill="#140F2B"/>
+
+  <!-- Mirrors on short arms, low beside the windscreen -->
+  <g fill="none" stroke="#2A1F4E" stroke-width="10" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M322 452 L 284 468 L 278 486"/>
+    <path d="M702 452 L 740 468 L 746 486"/>
+  </g>
+  <rect x="252" y="478" width="34" height="74" rx="12" fill="url(#dark)" transform="rotate(-6 269 515)"/>
+  <rect x="738" y="478" width="34" height="74" rx="12" fill="url(#dark)" transform="rotate(6 755 515)"/>
+  <rect x="259" y="488" width="8" height="44" rx="4" fill="#9C7BD8" opacity="0.55" transform="rotate(-6 269 515)"/>
+  <rect x="757" y="488" width="8" height="44" rx="4" fill="#9C7BD8" opacity="0.55" transform="rotate(6 755 515)"/>
+
+  <!-- Bus body -->
+  <rect x="318" y="290" width="388" height="470" rx="68" fill="url(#body)"/>
+  <rect x="318" y="290" width="388" height="470" rx="68" fill="url(#bodyShade)"/>
+  <path d="M386 290 H638 A68 68 0 0 1 706 358 V372 H318 V358 A68 68 0 0 1 386 290Z" fill="#FFF1D2" opacity="0.55"/>
+  <rect x="330" y="380" width="8" height="330" rx="4" fill="#FFF4DA" opacity="0.45"/>
+  <g fill="#FFF4DA">
+    <rect x="440" y="296" width="22" height="7" rx="3.5"/>
+    <rect x="501" y="296" width="22" height="7" rx="3.5"/>
+    <rect x="562" y="296" width="22" height="7" rx="3.5"/>
+  </g>
+
+  <!-- Destination sign: the route to a clock -->
+  <rect x="384" y="310" width="256" height="50" rx="16" fill="#1E163F"/>
+  <g stroke="#FFC66E" stroke-width="5" stroke-linecap="round" fill="none">
+    <path d="M412 335 H472"/>
+    <path d="M552 335 H612"/>
+    <circle cx="512" cy="335" r="15"/>
+    <path d="M512 326 V335 L519 340"/>
+  </g>
+  <circle cx="412" cy="335" r="6" fill="#FFC66E"/>
+  <circle cx="612" cy="335" r="6" fill="#FFC66E"/>
+
+  <!-- Windscreen with the evening in it -->
+  <rect x="346" y="384" width="332" height="190" rx="34" fill="url(#glass)"/>
+  <path d="M376 384 H448 L372 574 H346 V414 A30 30 0 0 1 376 384Z" fill="#FFFFFF" opacity="0.1"/>
+  <path d="M478 384 H508 L432 574 H402Z" fill="#FFFFFF" opacity="0.07"/>
+  <rect x="508" y="384" width="8" height="190" fill="#F7B04E"/>
+  <g stroke="#140F2B" stroke-width="7" stroke-linecap="round">
+    <path d="M436 566 L392 520"/>
+    <path d="M596 566 L552 520"/>
+  </g>
+
+  <!-- Front panel -->
+  <rect x="346" y="592" width="332" height="10" rx="5" fill="#C9701A" opacity="0.35"/>
+  <g fill="#1E163F">
+    <rect x="452" y="620" width="120" height="12" rx="6"/>
+    <rect x="452" y="642" width="120" height="12" rx="6"/>
+    <rect x="452" y="664" width="120" height="12" rx="6"/>
+  </g>
+
+  <!-- Headlights -->
+  <rect x="344" y="612" width="96" height="76" rx="30" fill="#2A1F4E"/>
+  <rect x="584" y="612" width="96" height="76" rx="30" fill="#2A1F4E"/>
+  <circle cx="392" cy="650" r="27" fill="url(#lamp)"/>
+  <circle cx="632" cy="650" r="27" fill="url(#lamp)"/>
+  <rect x="354" y="622" width="14" height="8" rx="4" fill="#FF9A3C"/>
+  <rect x="656" y="622" width="14" height="8" rx="4" fill="#FF9A3C"/>
+
+  <!-- Bumper and plate -->
+  <rect x="330" y="704" width="364" height="44" rx="22" fill="url(#dark)"/>
+  <rect x="466" y="712" width="92" height="28" rx="8" fill="#FFF6E4"/>
+  <g fill="#2A1F4E">
+    <rect x="478" y="722" width="20" height="8" rx="4"/>
+    <rect x="504" y="722" width="42" height="8" rx="4"/>
+  </g>
+
+  <!-- The headlight flare, last so it glows over the body -->
+  <circle cx="392" cy="650" r="130" fill="url(#flare)"/>
+  <circle cx="632" cy="650" r="130" fill="url(#flare)"/>
+  <circle cx="383" cy="641" r="7" fill="#FFFFFF"/>
+  <circle cx="623" cy="641" r="7" fill="#FFFFFF"/>
+</svg>

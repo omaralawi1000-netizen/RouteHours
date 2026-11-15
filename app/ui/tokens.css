@@ -1,0 +1,139 @@
+/* Wallpaper colours are registered so they blend smoothly when the state changes. */
+@property --sky-top { syntax: "<color>"; inherits: true; initial-value: transparent; }
+@property --sky-mid { syntax: "<color>"; inherits: true; initial-value: transparent; }
+@property --horizon { syntax: "<color>"; inherits: true; initial-value: transparent; }
+@property --ember { syntax: "<color>"; inherits: true; initial-value: transparent; }
+@property --aura { syntax: "<color>"; inherits: true; initial-value: transparent; }
+@property --aura-2 { syntax: "<color>"; inherits: true; initial-value: transparent; }
+@property --hill-far { syntax: "<color>"; inherits: true; initial-value: transparent; }
+@property --hill-mid { syntax: "<color>"; inherits: true; initial-value: transparent; }
+@property --hill-near { syntax: "<color>"; inherits: true; initial-value: transparent; }
+@property --road { syntax: "<color>"; inherits: true; initial-value: transparent; }
+
+/*
+ * The springs from app/ui/motion.ts as CSS curves, for motion the browser runs on its own
+ * compositor thread (the tab pill, switches, press dips, sliding cards): they stay smooth at 120 Hz
+ * even while the page is busy. Made by scripts/spring-css.mjs from Motion's own spring maths.
+ */
+:root {
+  --spring-tap: linear(0, 0.1061, 0.3018, 0.4922, 0.6466, 0.7613, 0.8422, 0.8975, 0.9342, 0.9582, 0.9737, 0.9836, 0.9898, 0.9937, 0.9961, 0.9976, 0.9985, 0.9991, 1, 1);
+  --spring-tap-ms: 300ms;
+  --spring-snappy: linear(0, 0.058, 0.1816, 0.3229, 0.4577, 0.5756, 0.6737, 0.7525, 0.8144, 0.862, 0.8981, 0.9253, 0.9455, 0.9605, 0.9714, 0.9794, 0.9852, 0.9894, 0.9924, 0.9946, 0.9962, 0.9973, 0.9981, 0.9986, 0.999, 1, 1);
+  --spring-snappy-ms: 400ms;
+  --spring-smooth: linear(0, 0.027, 0.0918, 0.1761, 0.2681, 0.36, 0.4474, 0.5277, 0.5996, 0.663, 0.718, 0.7653, 0.8055, 0.8394, 0.8679, 0.8917, 0.9114, 0.9278, 0.9412, 0.9523, 0.9613, 0.9687, 0.9747, 0.9796, 0.9836, 0.9868, 0.9894, 0.9915, 0.9932, 0.9945, 0.9956, 0.9965, 0.9972, 0.9978, 0.9982, 0.9986, 1);
+  --spring-smooth-ms: 550ms;
+  --spring-settle: linear(0, 0.0207, 0.0729, 0.1446, 0.2268, 0.313, 0.3986, 0.4804, 0.5565, 0.6257, 0.6875, 0.7419, 0.7891, 0.8295, 0.8637, 0.8924, 0.9161, 0.9356, 0.9515, 0.9641, 0.9742, 0.9821, 0.9881, 0.9928, 0.9962, 0.9987, 1.0004, 1.0016, 1.0024, 1);
+  --spring-settle-ms: 450ms;
+  --spring-exit: linear(0, 0.0901, 0.2641, 0.442, 0.5938, 0.7125, 0.8007, 0.864, 0.9083, 0.9388, 0.9595, 0.9734, 0.9826, 0.9887, 0.9927, 0.9953, 0.997, 0.9981, 0.9988, 0.9992, 1, 1, 1);
+  --spring-exit-ms: 350ms;
+}
+/* A press dips on the compositor: pointerdown marks the element (app/ui/press.ts), CSS does the rest. */
+[data-press] { transition: scale var(--spring-tap-ms) var(--spring-tap); }
+[data-press][data-pressed] { scale: var(--press, 0.97); }
+:where([data-motion="reduced"]) [data-press] { transition: none; }
+@media (prefers-reduced-motion: reduce) { [data-press] { transition: none; } }
+
+/*
+ * Headlight design tokens. Two looks with the same structure.
+ * Amber is only ever a fill under dark text, and only on the thing to tap or the running state.
+ * Contrast (WCAG): Night text 17.8:1, secondary 7.5:1, dark on amber 11.1:1;
+ * Day dark on amber 7.3:1, secondary 5.3:1.
+ */
+.look {
+  --font-sans: var(--font-jakarta), var(--font-inter-tight), system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-serif: var(--font-sans);
+  --title-style: normal;
+  --title-weight: 600;
+  --title-tracking: -0.035em;
+  --title-scale: 0.8;
+  --radius-card: 28px;
+  --radius-sheet: 28px;
+  --radius-pill: 999px;
+  --tap-main: 56px;
+  --tap-min: 48px;
+  --gutter: 20px;
+  --hairline: 1px;
+  color-scheme: dark;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  font-synthesis: none;
+}
+.look[data-look="night"] {
+  --bg: #0B0D1C;
+  --text: #F2F4F8;
+  --text-2: #98A1B1;
+  --text-3: #646C7B;
+  --line: rgba(255, 255, 255, 0.10);
+  --glass: rgba(255, 255, 255, 0.075);
+  --glass-strong: rgba(24, 20, 36, 0.58);
+  /* Small controls over the wallpaper: no backdrop blur (too costly per frame), so a fuller fill keeps them readable. */
+  --control: rgba(34, 30, 52, 0.5);
+  --glass-edge: rgba(255, 255, 255, 0.18);
+  /* Depth, lit from above: a tight contact shadow and one soft shadow. Kept small on purpose: a wide
+     blurred shadow is slow to draw on a sharp phone screen every time a page slides in. */
+  --glass-shadow: 0 1px 2px rgba(4, 2, 12, 0.22), 0 16px 32px -16px rgba(4, 2, 12, 0.75);
+  --glass-depth: inset 0 -14px 22px -18px rgba(0, 0, 0, 0.4);
+  --lift-shadow: 0 1px 1px rgba(4, 2, 12, 0.22), 0 8px 18px -8px rgba(4, 2, 12, 0.65);
+  --inset-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3), inset 0 -1px 0 rgba(255, 255, 255, 0.05);
+  --press: rgba(255, 255, 255, 0.08);
+  --accent: #FFB547;
+  --accent-press: #F0A532;
+  --on-accent: #1A1206;
+  --accent-track: rgba(255, 181, 71, 0.22);
+  --danger: #FF6B6B;
+  --success: #7BD88F;
+  --scrim: rgba(3, 4, 7, 0.55);
+  /* Glow colours as r g b, painted dithered onto a canvas (see Glow). */
+  --glow-idle: 92 128 184;
+  --glow-idle-strength: 0.18;
+  --glow-run: 255 170 64;
+  --glow-run-strength: 0.28;
+}
+.look[data-look="day"] {
+  color-scheme: light;
+  --bg: #E6DDEA;
+  --text: #15171C;
+  --text-2: #5C6372;
+  --text-3: #8A909C;
+  --line: rgba(40, 32, 70, 0.10);
+  --glass: rgba(255, 255, 255, 0.42);
+  --glass-strong: rgba(255, 255, 255, 0.7);
+  --control: rgba(255, 255, 255, 0.6);
+  --glass-edge: rgba(255, 255, 255, 0.9);
+  --glass-shadow: 0 1px 2px rgba(70, 40, 100, 0.08), 0 16px 32px -16px rgba(70, 40, 100, 0.34);
+  --glass-depth: inset 0 -14px 22px -18px rgba(70, 40, 100, 0.1);
+  --lift-shadow: 0 1px 1px rgba(70, 40, 100, 0.08), 0 8px 18px -8px rgba(70, 40, 100, 0.32);
+  --inset-shadow: inset 0 1px 3px rgba(70, 40, 100, 0.14), inset 0 -1px 0 rgba(255, 255, 255, 0.6);
+  --press: rgba(21, 23, 28, 0.05);
+  --accent: #E8920F;
+  --accent-press: #D9860A;
+  --on-accent: #15171C;
+  --accent-track: rgba(232, 146, 15, 0.2);
+  --danger: #C93838;
+  --success: #2F8F4E;
+  --scrim: rgba(40, 34, 24, 0.28);
+  --glow-idle: 150 186 232;
+  --glow-idle-strength: 0.30;
+  --glow-run: 255 178 120;
+  --glow-run-strength: 0.35;
+}
+/* Font pairings. Modern (Plus Jakarta Sans, above) is the default. Titles use the .serif class whichever pairing is on. */
+.look[data-font="clean"] { --font-sans: var(--font-inter-tight), system-ui, sans-serif; --font-serif: var(--font-sans); }
+.look[data-font="character"] { --font-sans: var(--font-bricolage), system-ui, sans-serif; --font-serif: var(--font-sans); --title-weight: 650; --title-tracking: -0.03em; --title-scale: 0.84; }
+.look[data-font="editorial"] { --font-serif: var(--font-fraunces), "Iowan Old Style", Georgia, serif; --title-style: italic; --title-weight: 400; --title-tracking: -0.02em; --title-scale: 0.9; }
+.look *, .look *::before, .look *::after { box-sizing: border-box; }
+.look :where(button, input, textarea, select) { font: inherit; color: inherit; }
+.look :where(button) { -webkit-user-select: none; user-select: none; touch-action: manipulation; }
+.look :where(h1, h2, h3, p) { margin: 0; }
+.look :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.look :focus:not(:focus-visible) { outline: none; }
+.numeric { font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; }
+.serif { font-family: var(--font-serif); font-style: var(--title-style, italic); font-weight: var(--title-weight, 400); letter-spacing: var(--title-tracking, -0.01em); font-variation-settings: "SOFT" 100; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+body:has(.look) { margin: 0; background: var(--page-bg, #0A0C11); overscroll-behavior-y: none; }
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: 0.28s; animation-timing-function: cubic-bezier(0.2, 0, 0, 1); }
