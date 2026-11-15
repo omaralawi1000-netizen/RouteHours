@@ -44,6 +44,9 @@ export default function SendSheet(props: Props) {
   return <Sheet open={props.open} onClose={props.onClose} title="Review & send">{props.open && <Body {...props}/>}</Sheet>;
 }
 
+/** Sends still waiting on Gmail. Kept outside the sheet, so closing and reopening it can't unlock a send in flight. */
+const inFlight = new Set<string>();
+
 function Body({ onClose, week, zone, shifts, running, profile, onProfile, details, onDetails, templates, onShifts, clientId, online, rate, say, onSettings }: Props) {
   const [includeNotes, setIncludeNotes] = useState(() => { try { return localStorage.getItem(NOTES_KEY) !== "false"; } catch { return true; } });
   const [records, setRecords] = useState<Submission[]>([]);
@@ -134,6 +137,7 @@ function Body({ onClose, week, zone, shifts, running, profile, onProfile, detail
       // The same sheet twice needs a second, deliberate hold.
       if (duplicate && againFor !== attachmentKey) { setAgainFor(attachmentKey); setGmailError("You already sent this exact sheet. Hold again to send another copy."); return; }
       const raw = await gmailMessage(record.recipient, subject, message, file, account.email);
+      inFlight.add(record.id);
       await beginSubmission(record, duplicate);
       attempted = true;
       const gmailId = await sendGmailMessage(account.token, raw); confirmed = true;
@@ -148,7 +152,10 @@ function Body({ onClose, week, zone, shifts, running, profile, onProfile, detail
         if (attempted) await saveSubmission({ ...record, status: /Nothing was sent|Gmail rejected/i.test(text) ? "reviewed" : "uncertain" }).catch(() => {});
         setGmailError(text);
       }
-    } finally { sendingRef.current = false; setSending(false); }
+    } finally {
+      sendingRef.current = false; setSending(false);
+      if (inFlight.delete(record.id)) window.dispatchEvent(new Event("routehours:submissions"));
+    }
   }
 
   // Fixing a day writes straight to your shifts and day notes, so the app and the sheet never disagree.
@@ -310,7 +317,11 @@ function Body({ onClose, week, zone, shifts, running, profile, onProfile, detail
 
 /** A send that was never confirmed: check Gmail Sent before anything else, so it never goes twice. */
 function Uncertain({ record, confirming, setConfirming, onError }: { record: Submission; confirming: "" | "notSent" | "found"; setConfirming: (value: "" | "notSent" | "found") => void; onError: (message: string) => void }) {
+  if (inFlight.has(record.id)) return <div className={styles.warn} role="status"><TriangleAlert aria-hidden="true"/><div>
+    <p><strong>Still sending.</strong> Gmail hasn&apos;t answered yet. Wait here; this updates by itself.</p>
+  </div></div>;
   async function mark(found: boolean) {
+    if (inFlight.has(record.id)) return;
     const step = found ? "found" : "notSent";
     if (confirming !== step) { setConfirming(step); return; }
     setConfirming("");

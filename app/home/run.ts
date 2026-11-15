@@ -176,13 +176,18 @@ export function useRun(say: Say) {
       // A part that has since been saved keeps its start, so the note still finds it.
       if (current && target.activeStart === current.start) { update({ active: { ...current, notes: [...current.notes, note] } }); return true; }
       const shift = latest.current.shifts.find(s => target.shiftId ? s.id === target.shiftId : s.start === target.activeStart);
-      if (shift) { update(data => ({ shifts: data.shifts.map(s => s.id === shift.id ? { ...s, notes: [...s.notes, note] } : s) })); return true; }
+      if (shift) { update(data => ({ shifts: data.shifts.map(s => s.id === shift.id ? withNote(s, note) : s) })); return true; }
     }
     if (current) { update({ active: { ...current, notes: [...current.notes, note] } }); return true; }
     const last = pieces.at(-1) ?? latest.current.shifts.slice().sort((a, b) => b.start.localeCompare(a.start))[0];
     if (!last) return false;
-    update(data => ({ shifts: data.shifts.map(s => s.id === last.id ? { ...s, notes: [...s.notes, note] } : s) }));
+    update(data => ({ shifts: data.shifts.map(s => s.id === last.id ? withNote(s, note) : s) }));
     return true;
+  }
+
+  /** A saved shift's summary was written from its old notes, so a new note clears it (and queues a new one when summaries are on). */
+  function withNote(shift: Shift, note: string): Shift {
+    return { ...shift, notes: [...shift.notes, note], summary: undefined, summaryError: undefined, summaryStatus: willSummarize ? "pending" : undefined };
   }
 
   const phase: Phase = running ? "running" : landing ? "landing" : "idle";

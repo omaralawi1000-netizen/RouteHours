@@ -85,14 +85,23 @@ export default function Reminders({ say, travel, onTravel, parts, zone }: { say:
   // The server keeps this phone's list. Whenever the list here differs from the one last sent (a new
   // trip length, new usual shifts or zone, also changed from the classic screens), it is sent again.
   const list = JSON.stringify([remindersFor(parts, travel), zone]);
+  // One send at a time: when it's done, the newest list goes next, so an older list never lands last.
   const synced = useRef<string | null>(null);
   if (synced.current === null) synced.current = readSynced();
+  const inFlight = useRef(false);
+  const failed = useRef("");
+  const sync = useRef<() => void>(() => {});
   useEffect(() => {
-    if (synced.current === list || state !== "on" || !server?.store) return;
-    synced.current = list;
-    subscription(false).then(sub => sub && fetch("/api/push/subscribe", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ subscription: sub.toJSON(), reminders: remindersFor(parts, travel), days: [1, 2, 3, 4, 5], zone }) }))
-      .then(res => { if (res && !res.ok) throw new Error(); if (res) writeSynced(list); })
-      .catch(() => { synced.current = ""; say("Couldn't update the reminder times on the server"); });
+    sync.current = () => {
+      if (inFlight.current || synced.current === list || failed.current === list || state !== "on" || !server?.store) return;
+      inFlight.current = true;
+      const sending = list;
+      subscription(false).then(sub => sub && fetch("/api/push/subscribe", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ subscription: sub.toJSON(), reminders: remindersFor(parts, travel), days: [1, 2, 3, 4, 5], zone }) }))
+        .then(res => { if (res && !res.ok) throw new Error(); if (res) { synced.current = sending; writeSynced(sending); } })
+        .catch(() => { failed.current = sending; say("Couldn't update the reminder times on the server"); })
+        .finally(() => { inFlight.current = false; sync.current(); });
+    };
+    sync.current();
   }, [list, state, server]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function turnOff() {
