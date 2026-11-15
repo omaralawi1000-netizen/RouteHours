@@ -96,10 +96,20 @@ export default function Reminders({ say, travel, onTravel, parts, zone }: { say:
       if (inFlight.current || synced.current === list || failed.current === list || state !== "on" || !server?.store) return;
       inFlight.current = true;
       const sending = list;
-      subscription(false).then(sub => sub && fetch("/api/push/subscribe", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ subscription: sub.toJSON(), reminders: remindersFor(parts, travel), days: [1, 2, 3, 4, 5], zone }) }))
+      // No subscription any more (turned off in another tab, or notifications blocked since): reminders
+      // are off on this phone, so say so and stop, instead of asking again and again.
+      let gone = false;
+      subscription(false).then(sub => { if (!sub) { gone = true; return; } return fetch("/api/push/subscribe", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ subscription: sub.toJSON(), reminders: remindersFor(parts, travel), days: [1, 2, 3, 4, 5], zone }) }); })
         .then(res => { if (res && !res.ok) throw new Error(); if (res) { synced.current = sending; writeSynced(sending); } })
         .catch(() => { failed.current = sending; say("Couldn't update the reminder times on the server"); })
-        .finally(() => { inFlight.current = false; sync.current(); });
+        .finally(() => {
+          inFlight.current = false;
+          if (!gone) { sync.current(); return; }
+          failed.current = sending;
+          try { localStorage.removeItem(KEY); } catch { /* off for now */ }
+          setState("off");
+          say("Reminders are off on this phone. Turn them on to get them again.");
+        });
     };
     sync.current();
   }, [list, state, server]); // eslint-disable-line react-hooks/exhaustive-deps
