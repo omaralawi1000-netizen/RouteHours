@@ -112,13 +112,32 @@ test("home: a typed note survives a reload and is saved with the shift", async (
   await page.getByRole("button", { name: "Start shift" }).click();
   await page.getByRole("button", { name: "Add a note" }).click();
   await page.getByRole("dialog").getByLabel("New note").fill("Bus 1123 had a flat");
-  await page.clock.fastForward(2_000);
+  // Reload only once the draft is in the device database.
+  const savedDraft = () => page.evaluate(() => new Promise<string>(resolve => {
+    const open = indexedDB.open("routehours", 1);
+    open.onsuccess = () => { const get = open.result.transaction("state").objectStore("state").get("app"); get.onsuccess = () => resolve(get.result?.data?.noteDraft ?? ""); get.onerror = () => resolve(""); };
+    open.onerror = () => resolve("");
+  }));
+  await expect.poll(async () => { await page.clock.fastForward(500); return savedDraft(); }).toBe("Bus 1123 had a flat");
   await page.reload();
   await page.getByRole("button", { name: "Add a note" }).click();
   await expect(page.getByRole("dialog").getByLabel("New note")).toHaveValue("Bus 1123 had a flat");
-  await page.keyboard.press("Escape");
+  // The test clock is paused, so step it (and press Escape again if the sheet wasn't listening yet) until the sheet is gone.
+  const dialogs = page.getByRole("dialog");
+  await expect.poll(async () => { if (await dialogs.count()) await page.keyboard.press("Escape"); await page.clock.fastForward(200); return dialogs.count(); }, { timeout: 15_000 }).toBe(0);
   await page.clock.fastForward(20 * 60_000);
   await page.getByRole("button", { name: "Finish shift" }).click();
   await page.getByRole("button", { name: /Edit Today's shift/ }).click();
   await expect(page.getByRole("dialog")).toContainText("Bus 1123 had a flat");
+});
+
+test("home: unreadable data shows recovery right here, without leaving the screen", async ({ page }) => {
+  await page.route(url => !["127.0.0.1", "localhost"].includes(url.hostname), route => route.abort());
+  await page.addInitScript(() => localStorage.setItem("routehours:v1", JSON.stringify({ storageVersion: 2 })));
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Your data needs attention" })).toBeVisible();
+  const download = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download original data" }).click();
+  expect((await download).suggestedFilename()).toBe("routehours-original-data.json");
+  await expect(page.getByRole("button", { name: "Restore a backup file" })).toBeVisible();
 });

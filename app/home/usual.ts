@@ -23,6 +23,9 @@ export const dayMinutes = (parts: DayPart[]) => parts.reduce((sum, p) => sum + p
  * following one (Morning until about 10:15), and the last one until 45 minutes before it ends.
  */
 export function nextPart(parts: DayPart[], now: number): DayPart | null {
+  // After midnight, last night's overnight part (22:00–06:00) comes before any daytime part.
+  const overnight = parts.find(p => now + 1440 < toMinutes(p.start) + p.minutes - 45);
+  if (overnight) return overnight;
   for (let i = 0; i < parts.length; i++) {
     const part = parts[i], following = parts[i + 1];
     // Start plus length, so an overnight part (22:00–06:00) ends at 30:00, not 06:00.

@@ -33,6 +33,7 @@ import { NEED_KEY, useVoice, type Logged } from "./ai";
 import { isBool, usePref } from "./prefs";
 import { isTravel, LEGACY_TRAVEL_KEY, TRAVEL_KEY } from "./reminders";
 import { useRun, type NoteTarget } from "./run";
+import { downloadOriginalData, recoverFromBackup } from "../screens/boot-screens";
 import SendSheet from "./send-sheet";
 import Settings from "./settings";
 import ShiftSheet from "./shift-sheet";
@@ -104,6 +105,7 @@ function Shell() {
   }
 
   const [toast, setToast] = useState<ToastMessage | null>(null);
+  const recoveryFile = useRef<HTMLInputElement>(null);
   const say = useCallback((text: string, action?: ToastMessage["action"]) => setToast({ id: Date.now(), text, action }), []);
 
   const [tab, setTab] = useState<TabId>("today");
@@ -305,8 +307,10 @@ function Shell() {
           <Glass blur className={styles.card}>
             <h1 className={`${styles.cardTitle} serif`}>Your data needs attention</h1>
             <p className={styles.hint}>{bootError}</p>
-            <p className={styles.hint}>Nothing has been deleted. The recovery screen can download the original data and restore a backup.</p>
-            <a className={styles.linkButton} href="/classic">Open recovery</a>
+            <p className={styles.hint}>Nothing has been deleted. Download the data as it is first, then restore a backup file. Both work offline.</p>
+            <Button variant="glass" icon={<Download/>} onClick={() => void downloadOriginalData()}>Download original data</Button>
+            <Button variant="glass" icon={<RotateCcw/>} onClick={() => recoveryFile.current?.click()}>Restore a backup file</Button>
+            <input ref={recoveryFile} type="file" accept=".json,application/json" hidden aria-label="Backup file" onChange={async e => { const f = e.target.files?.[0]; e.target.value = ""; if (!f) return; try { await recoverFromBackup(f); } catch (error) { say((error as Error).message); } }}/>
           </Glass>
         </main> : <>
           <div className={styles.pages}>
@@ -361,8 +365,8 @@ function Shell() {
               <Button variant="glass" onClick={() => location.reload()}>Reload</Button>
             </div>
           </Sheet>
-          <Toast message={toast} onDismiss={() => setToast(null)}/>
         </>}
+        <Toast message={toast} onDismiss={() => setToast(null)}/>
       </div>
     </MotionConfig>
   </LazyMotion>;
