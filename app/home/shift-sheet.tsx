@@ -33,9 +33,14 @@ function Form({ shift, isNew, shifts, zone, onSave, onDelete }: { shift: Shift; 
   function build(): Shift | null {
     if (!valid) { setError("Pick a day and both times."); return null; }
     try {
-      const unchangedStart = date === dateInZone(shift.start, zone) && start === timeInZone(shift.start, zone);
-      const endDate = nextDay ? addDays(date, 1) : date;
-      const unchangedEnd = endDate === dateInZone(shift.end, zone) && end === timeInZone(shift.end, zone);
+      const startDay = dateInZone(shift.start, zone);
+      const unchangedStart = date === startDay && start === timeInZone(shift.start, zone);
+      // A finish time left as it was keeps its days after the start, so a shift longer than a day
+      // (or one moved to another date) never loses whole days on Save.
+      const endTime = end === timeInZone(shift.end, zone);
+      const offset = Math.round((Date.parse(`${dateInZone(shift.end, zone)}T12:00:00Z`) - Date.parse(`${startDay}T12:00:00Z`)) / 86400000);
+      const endDate = endTime && start === timeInZone(shift.start, zone) ? addDays(date, offset) : nextDay ? addDays(date, 1) : date;
+      const unchangedEnd = endDate === dateInZone(shift.end, zone) && endTime;
       const startAt = unchangedStart ? shift.start : zonedInstant(`${date}T${start}`, zone, true);
       const endAt = unchangedEnd ? shift.end : zonedInstant(`${endDate}T${end}`, zone, true);
       if (Date.parse(endAt) <= Date.parse(startAt)) { setError("The finish must be after the start."); return null; }

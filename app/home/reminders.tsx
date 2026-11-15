@@ -40,7 +40,7 @@ function keyBytes(base64: string) {
 }
 
 /** Lock-screen reminders with Start and Finish buttons, so the shift is one tap away even with the app closed. */
-export default function Reminders({ say, travel, onTravel, parts }: { say: (text: string) => void; travel: number; onTravel: (next: number) => void; parts: DayPart[] }) {
+export default function Reminders({ say, travel, onTravel, parts, zone }: { say: (text: string) => void; travel: number; onTravel: (next: number) => void; parts: DayPart[]; zone: string }) {
   const [server, setServer] = useState<Server | null>(null);
   const [state, setState] = useState<State>("off");
 
@@ -65,7 +65,7 @@ export default function Reminders({ say, travel, onTravel, parts }: { say: (text
       const sub = await subscription(true);
       if (!sub) throw new Error("No subscription");
       if (server?.store) {
-        const res = await fetch("/api/push/subscribe", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ subscription: sub.toJSON(), reminders: remindersFor(parts, travel), days: [1, 2, 3, 4, 5] }) });
+        const res = await fetch("/api/push/subscribe", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ subscription: sub.toJSON(), reminders: remindersFor(parts, travel), days: [1, 2, 3, 4, 5], zone }) });
         if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? "Couldn't save the reminders.");
         say("Reminders on, Monday to Friday");
       } else say("This phone is ready. Daily reminders start once storage is set up.");
@@ -75,12 +75,12 @@ export default function Reminders({ say, travel, onTravel, parts }: { say: (text
   }
 
   // A new trip length re-saves this phone's list, so the server sends the new leave time.
-  const list = JSON.stringify(remindersFor(parts, travel));
+  const list = JSON.stringify([remindersFor(parts, travel), zone]);
   const synced = useRef(list);
   useEffect(() => {
     if (synced.current === list || state !== "on" || !server?.store) return;
     synced.current = list;
-    subscription(false).then(sub => sub && fetch("/api/push/subscribe", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ subscription: sub.toJSON(), reminders: remindersFor(parts, travel), days: [1, 2, 3, 4, 5] }) }))
+    subscription(false).then(sub => sub && fetch("/api/push/subscribe", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ subscription: sub.toJSON(), reminders: remindersFor(parts, travel), days: [1, 2, 3, 4, 5], zone }) }))
       .then(res => { if (res && !res.ok) say("Couldn't update the reminder times on the server"); }).catch(() => say("Couldn't update the reminder times on the server"));
   }, [list, state, server]); // eslint-disable-line react-hooks/exhaustive-deps
 

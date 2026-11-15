@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, m } from "motion/react";
 import { Bus, ChevronRight, Clock, Coffee, Flag, Footprints, NotebookPen, Play, Plus, Settings2, Square, TriangleAlert, X } from "lucide-react";
-import { timeInZone } from "@/lib/ledger";
+import { addDays, dateInZone, timeInZone, zonedInstant } from "@/lib/ledger";
 import { useNow } from "../features/use-now";
 import Button from "../ui/button";
 import Glass from "../ui/glass";
@@ -16,6 +16,12 @@ import { item } from "../lab/stagger";
 import { AUTO_FINISH_AFTER, BREAK_AFTER, hm, hms, kr, minutesToClock, nextPart, toMinutes, zoneMinutes, type DayPart } from "./usual";
 import type { RunControls } from "./run";
 import styles from "./home.module.css";
+
+/** When a part usually ends, on the date the run began. */
+function usualEnd(startedAt: number, part: DayPart, zone: string) {
+  const date = dateInZone(startedAt, zone);
+  try { return Date.parse(zonedInstant(`${part.end < part.start ? addDays(date, 1) : date}T${part.end}`, zone)); } catch { return 0; }
+}
 
 export type RecentItem = { id: string; day: string; start: string; end: string; minutes: number; note?: string };
 type Alert = { id: string; text: string; icon?: ReactNode; action?: { label: string; onClick: () => void }; alt?: { label: string; onClick: () => void } };
@@ -123,9 +129,11 @@ export default function Today(props: {
 
   // Auto-stop: a usual run nobody finished closes itself an hour after its usual end, logged as
   // ending at the usual time. "Still driving" (here or on the reminder) turns this off for the run.
-  const usualEndAt = part ? Math.floor(now / 60000) * 60000 - (clockNow - toMinutes(part.end)) * 60000 : 0;
+  // The usual end is on the run's own date (the next day for a part that runs past midnight), so a
+  // run left open overnight is never "finished" on the following day's clock.
+  const usualEndAt = part ? usualEnd(startedAt, part, zone) : 0;
   const activeStart = run.active ? Date.parse(run.active.start) : 0;
-  const autoDue = running && !onBreak && !!part && !run.stillDriving && clockNow >= toMinutes(part.end) + AUTO_FINISH_AFTER && clockNow < toMinutes(part.end) + 6 * 60 && usualEndAt > activeStart + 10 * 60000;
+  const autoDue = running && !onBreak && !!part && !run.stillDriving && now >= usualEndAt + AUTO_FINISH_AFTER * 60000 && now < usualEndAt + 6 * 3600000 && usualEndAt > activeStart + 10 * 60000;
   const autoFired = useRef(0);
   useEffect(() => {
     if (!autoDue || autoFired.current === activeStart) return;

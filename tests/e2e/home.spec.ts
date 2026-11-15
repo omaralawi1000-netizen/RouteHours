@@ -95,3 +95,14 @@ test("home: the Start shortcut and reminder link start a shift", async ({ page }
   await expect(page.getByRole("button", { name: "Finish shift" })).toBeVisible();
   await expect(page).toHaveURL(/\/$/);
 });
+
+test("home: the name and payroll number fields stay open while you fill them in", async ({ page }) => {
+  await openHome(page);
+  await page.getByRole("button", { name: "Week", exact: true }).click();
+  await page.getByRole("button", { name: "Review & send" }).click();
+  const sheet = page.getByRole("dialog", { name: "Review & send" });
+  await sheet.getByRole("textbox", { name: "Your name", exact: true }).fill("Omar");
+  await sheet.getByRole("textbox", { name: "Løn-nr.", exact: true }).pressSequentially("12");
+  await expect(sheet.getByRole("textbox", { name: "Løn-nr.", exact: true })).toHaveValue("12");
+  await expect(sheet.getByRole("textbox", { name: "Your name", exact: true })).toHaveValue("Omar");
+});

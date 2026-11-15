@@ -57,7 +57,7 @@ export default function Settings({ say, look, rate, onRate, travel, onTravel, ba
     </m.section>
 
     <m.section variants={item}><UsualShifts templates={templates} onSave={async value => { await saveNow({ templates: value }); say("Usual shifts saved"); }} say={say}/></m.section>
-    <m.section variants={item}><Reminders say={say} travel={travel} onTravel={onTravel} parts={parts}/></m.section>
+    <m.section variants={item}><Reminders say={say} travel={travel} onTravel={onTravel} parts={parts} zone={workZone}/></m.section>
     <m.section variants={item}><GeminiCard apiKey={geminiApiKey} onSave={key => update({ geminiApiKey: key })} say={say} summaries={aiEnabled} onSummaries={on => update({ aiEnabled: on })}/></m.section>
     <m.section variants={item}><GoogleCard clientId={clientId} google={google} online={online} say={say}/></m.section>
 

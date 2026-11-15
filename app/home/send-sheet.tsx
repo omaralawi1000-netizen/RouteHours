@@ -62,6 +62,8 @@ function Body({ onClose, week, zone, shifts, running, profile, onProfile, detail
   const [openDay, setOpenDay] = useState<string | null>(null);
   const [fullSheet, setFullSheet] = useState(false);
   const [confirming, setConfirming] = useState<"" | "notSent" | "found">("");
+  // Decided once per opening, so typing in one field never hides the other mid-edit.
+  const [askProfile] = useState(() => !profile.name || !profile.number);
   const { account: savedAccount, savedEmail } = useGoogleSession(clientId, "gmail");
   const account = connecting ? null : savedAccount;
   const authRequest = useRef<AbortController | null>(null);
@@ -273,7 +275,7 @@ function Body({ onClose, week, zone, shifts, running, profile, onProfile, detail
     </section>
 
     {/* Who you are, on the sheet */}
-    {(!profile.name || !profile.number) && <section className={styles.block}>
+    {askProfile && <section className={styles.block}>
       <div className={styles.blockHead}><h3>On the sheet</h3><span className={styles.muted}>Saved for next week</span></div>
       <label className={styles.mailField}><span>Your name</span><input value={profile.name} maxLength={120} placeholder="Full name" onChange={e => onProfile({ ...profile, name: e.target.value })}/></label>
       <label className={styles.mailField}><span>Løn-nr.</span><input value={profile.number} maxLength={60} inputMode="numeric" placeholder="Payroll number" onChange={e => onProfile({ ...profile, number: e.target.value })}/></label>

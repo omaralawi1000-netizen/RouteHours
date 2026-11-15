@@ -265,18 +265,22 @@ function Shell() {
   }, [loaded]);
 
   // What "Ask your hours" and the payslip check know: every day on the strip, with its date.
+  /** The AI endpoint takes up to 6,000 characters, so the day totals always fit and notes are trimmed to what's left. */
   function hoursContext() {
     const days = weekData.flatMap(w => w.days);
-    return [
+    const recentLines = sorted.slice(0, 12).map(s => `${dateInZone(s.start, zone)} ${timeInZone(s.start, zone)}-${timeInZone(s.end, zone)}${s.notes.length ? `, notes: ${s.notes.join("; ").replace(/\s+/g, " ").slice(0, 160)}` : ""}`);
+    const head = [
       `Today is ${dateLabel} ${today.slice(0, 4)}.`,
       `Hourly pay ${rate} kr before tax. Weekly goal ${weeklyGoalHours ? `${weeklyGoalHours} hours` : "none"}. Days listed start ${days[0].date}; ask about earlier days and say they are not listed.`,
       `Usual day: ${parts.map(p => `${p.label} ${p.start}-${p.end}`).join(", ") || "not set"}.`,
       "Days (date: hours worked, mark):",
       ...days.map(d => `${d.date} ${LONG[(new Date(`${d.date}T12:00:00Z`).getUTCDay() + 6) % 7].slice(0, 3)}: ${hm(d.minutes)}${markOf(d.date) ? ` ${markOf(d.date)}` : ""}`),
-      "Recent shifts:",
-      ...sorted.slice(0, 12).map(s => `${dateInZone(s.start, zone)} ${timeInZone(s.start, zone)}-${timeInZone(s.end, zone)}${s.notes.length ? `, notes: ${s.notes.join("; ")}` : ""}`),
       run.active ? `A shift is running since ${timeInZone(run.active.start, zone)}.` : "",
+      "Recent shifts:",
     ].filter(Boolean).join("\n");
+    let context = head;
+    for (const line of recentLines) { if (context.length + line.length + 1 > 5900) break; context += `\n${line}`; }
+    return context;
   }
   function logged(from: string, to: string): Logged {
     const first = sorted.at(-1);

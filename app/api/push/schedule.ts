@@ -7,8 +7,10 @@ export type Device = {
   keys: { p256dh: string; auth: string };
   reminders: Reminder[];
   days: number[]; // 1 = Monday ... 7 = Sunday
-  sent: Record<string, string>; // reminder id -> date it last went out (yyyy-mm-dd, Copenhagen)
+  sent: Record<string, string>; // reminder id -> date it last went out (yyyy-mm-dd, in the device's zone)
   createdAt: string;
+  /** The phone's work time zone. Older devices have none and use Copenhagen. */
+  zone?: string;
 };
 export const ZONE = "Europe/Copenhagen";
 const PUSH_HOSTS = [/\.googleapis\.com$/, /\.mozilla\.com$/, /\.push\.apple\.com$/, /\.notify\.windows\.com$/, /\.microsoft\.com$/];
@@ -27,7 +29,8 @@ export function cleanSubscription(value: unknown): { endpoint: string; keys: { p
 
 export function cleanReminders(value: unknown): Reminder[] {
   if (!Array.isArray(value)) return [];
-  return value.slice(0, 8).flatMap((r, i): Reminder[] => {
+  // Up to four usual parts, each with a leave, start and finish reminder.
+  return value.slice(0, 12).flatMap((r, i): Reminder[] => {
     if (!r || typeof r !== "object") return [];
     const x = r as Record<string, unknown>;
     if (typeof x.time !== "string" || !/^([01]\d|2[0-3]):[0-5]\d$/.test(x.time)) return [];
@@ -42,9 +45,15 @@ export function cleanDays(value: unknown): number[] {
   return [...new Set(value.filter((d): d is number => Number.isInteger(d) && d >= 1 && d <= 7))].sort();
 }
 
-/** Today's date and the minutes since midnight, in Copenhagen time. */
-export function copenhagenNow(now = new Date()) {
-  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: ZONE, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", weekday: "short", hourCycle: "h23" }).formatToParts(now).map(p => [p.type, p.value]));
+/** A time zone the server can use, or Copenhagen. */
+export function cleanZone(value: unknown): string {
+  if (typeof value !== "string" || value.length > 64) return ZONE;
+  try { new Intl.DateTimeFormat("en-GB", { timeZone: value }); return value; } catch { return ZONE; }
+}
+
+/** Today's date and the minutes since midnight, in Copenhagen time (or another zone). */
+export function copenhagenNow(now = new Date(), zone = ZONE) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", weekday: "short", hourCycle: "h23" }).formatToParts(now).map(p => [p.type, p.value]));
   const weekday = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].indexOf(parts.weekday) + 1;
   return { date: `${parts.year}-${parts.month}-${parts.day}`, minutes: Number(parts.hour) * 60 + Number(parts.minute), weekday };
 }

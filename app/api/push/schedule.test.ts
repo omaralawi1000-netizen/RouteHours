@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cleanDays, cleanReminders, cleanSubscription, copenhagenNow, due, type Device } from "./schedule.ts";
+import { cleanDays, cleanReminders, cleanSubscription, cleanZone, copenhagenNow, due, type Device } from "./schedule.ts";
 
 const device = (over: Partial<Device> = {}): Device => ({
   endpoint: "https://fcm.googleapis.com/fcm/send/abc", keys: { p256dh: "k", auth: "a" }, days: [1, 2, 3, 4, 5], sent: {}, createdAt: "",
@@ -48,4 +48,17 @@ test("a failed delivery is released even when the phone saved its file in betwee
   assert.deepEqual(writes, ["v1", "v2"]);
   assert.deepEqual(stored.device.sent, { "pm-start": "2026-11-13" }, "only the failed claim is cleared");
   assert.deepEqual(stored.device.days, [1, 2], "the phone's own change is kept");
+});
+
+test("a phone in another work time zone gets its reminders on its own clock", () => {
+  // 05:40 UTC is 06:40 in Copenhagen but 05:40 in London (November).
+  assert.equal(copenhagenNow(new Date("2026-11-13T05:40:00Z"), "Europe/London").minutes, 5 * 60 + 40);
+  assert.equal(cleanZone("Europe/London"), "Europe/London");
+  assert.equal(cleanZone("Not/AZone"), "Europe/Copenhagen");
+  assert.equal(cleanZone(undefined), "Europe/Copenhagen");
+});
+
+test("four usual parts keep all twelve reminders", () => {
+  const list = Array.from({ length: 13 }, (_, i) => ({ id: `r${i}`, time: "06:40", title: "x", body: "y", action: "start" }));
+  assert.equal(cleanReminders(list).length, 12);
 });

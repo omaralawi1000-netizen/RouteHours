@@ -22,10 +22,12 @@ export async function GET(request: NextRequest) {
   if (!allowed(request)) return NextResponse.json({ error: "Not allowed." }, { status: 401 });
   const ready = configured();
   if (!ready.push || !ready.store) return NextResponse.json({ error: "Push isn't set up yet.", ...ready }, { status: 503 });
-  const now = copenhagenNow();
+  const at = new Date();
   const stored = await readDevices();
   let sent = 0;
   for (const { device, etag } of stored) {
+    // Each phone's reminders follow its own work time zone.
+    const now = copenhagenNow(at, device.zone);
     const reminders = due(device, now);
     if (!reminders.length) continue;
     // Claim first: mark the reminders as sent and save with the etag we read. If another tick (or the
@@ -47,5 +49,5 @@ export async function GET(request: NextRequest) {
     // If the phone saved its file meanwhile, the release re-reads it and retries, keeping the phone's change.
     if (failed.length) await releaseClaims(device, claimed, failed, now.date, { read: () => readDevice(device.endpoint), write: writeDevice });
   }
-  return NextResponse.json({ ok: true, sent, devices: stored.length, at: now }, { headers: { "cache-control": "no-store" } });
+  return NextResponse.json({ ok: true, sent, devices: stored.length, at: at.toISOString() }, { headers: { "cache-control": "no-store" } });
 }
