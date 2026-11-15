@@ -43,7 +43,7 @@ test("a failed delivery is released even when the phone saved its file in betwee
   let stored: Saved = { device: { ...base, days: [1, 2], sent: { "am-start": "2026-11-13", "pm-start": "2026-11-13" } }, etag: "v2" };
   const writes: string[] = [];
   const write = async (device: Device, etag: string) => { writes.push(etag); if (etag !== stored.etag) return null; stored = { device, etag: "v3" }; return "v3"; };
-  const ok = await releaseClaims({ ...base, sent: { "am-start": "2026-11-13", "pm-start": "2026-11-13" } }, "v1", ["am-start"], "2026-11-13", { read: async () => stored, write });
+  const ok = await releaseClaims({ ...base, sent: { "am-start": "2026-11-13", "pm-start": "2026-11-13" } }, "v1", { "am-start": "2026-11-13" }, { read: async () => stored, write });
   assert.equal(ok, true);
   assert.deepEqual(writes, ["v1", "v2"]);
   assert.deepEqual(stored.device.sent, { "pm-start": "2026-11-13" }, "only the failed claim is cleared");
@@ -81,4 +81,22 @@ test("a long template id keeps each reminder's suffix, so its reminders stay apa
   const ids = cleanReminders(["start", "end", "leave"].map(kind => ({ id: `${id}-${kind}`, time: "06:40" }))).map(r => r.id);
   assert.equal(new Set(ids).size, 3);
   assert.ok(ids.every(r => r.startsWith(id)));
+});
+
+test("a reminder just before midnight still goes out on a tick just after it", () => {
+  const at = (date: string, minutes: number, weekday: number) => ({ date, minutes, weekday });
+  // A Monday 00:02 part is nudged on Sunday 23:57. Ticking every five minutes, the tick after 23:55 is at 00:00.
+  const early = device({ reminders: [{ id: "n-start", time: "23:57", title: "Start", body: "", action: "start", day: -1 }] });
+  assert.deepEqual(due(early, at("2026-11-16", 0, 1)).map(r => [r.id, r.date]), [["n-start", "2026-11-15"]]);
+  assert.deepEqual(due(early, at("2026-11-16", 16, 1)).map(r => r.id), ["n-start"]);
+  assert.deepEqual(due(early, at("2026-11-16", 17, 1)), [], "20 minutes on, it is too late");
+  // Sunday's reminder already went out (it is dated Sunday): not again after midnight, but again on Monday evening.
+  const sent = { ...early, sent: { "n-start": "2026-11-15" } };
+  assert.deepEqual(due(sent, at("2026-11-16", 0, 1)), []);
+  assert.deepEqual(due(sent, at("2026-11-16", 23 * 60 + 57, 1)).map(r => r.id), ["n-start"]);
+  // Friday 23:57 is for Saturday, not a working day: not sent at 00:00 on Saturday either.
+  assert.deepEqual(due(early, at("2026-11-14", 0, 6)), []);
+  // A reminder at 00:00 is today's, not yesterday's.
+  const midnight = device({ reminders: [{ id: "m", time: "00:00", title: "x", body: "", action: "start" }] });
+  assert.deepEqual(due(midnight, at("2026-11-16", 5, 1)).map(r => [r.id, r.date]), [["m", "2026-11-16"]]);
 });

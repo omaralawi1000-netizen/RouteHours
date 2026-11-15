@@ -268,6 +268,31 @@ test("home: Review & send can fix one time of a shift that ends in the hour repe
   await expect(sheet.getByRole("button", { name: /^Sun/ })).toContainText("1:45");
 });
 
+test("home: removing one day of an overnight shift in Review & send keeps the other day's hours", async ({ page }) => {
+  // Wednesday 18 November, 22:00 in Copenhagen, to Thursday 06:00.
+  await page.route(url => !["127.0.0.1", "localhost"].includes(url.hostname), route => route.abort());
+  await installClock(page, new Date("2026-11-18T21:00:00Z"));
+  await page.goto("/");
+  await page.getByRole("button", { name: "Start shift" }).click();
+  await page.clock.fastForward(8 * 60 * 60_000);
+  await page.getByRole("button", { name: "Finish shift" }).click();
+  await toast(page, "Shift saved · 8:00");
+  await page.getByRole("button", { name: "Week", exact: true }).click();
+  await page.getByRole("button", { name: "Review & send" }).click();
+  const sheet = page.getByRole("dialog", { name: "Review & send" });
+  const wednesday = sheet.getByRole("button", { name: /^Wed/ }), thursday = sheet.getByRole("button", { name: /^Thu/ });
+  await expect(thursday).toContainText("00:00–06:00");
+  await thursday.click();
+  await sheet.getByRole("button", { name: "Remove Thursday shift 1" }).click();
+  await toast(page, "Removed the hours on 19.11. The rest of that shift stays.");
+  await expect(thursday).not.toContainText("06:00");
+  await expect(wednesday).toContainText("22:00");
+  await expect(wednesday).toContainText("2:00");
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(thursday).toContainText("00:00–06:00");
+  await expect(wednesday).toContainText("22:00");
+});
+
 test.describe("home: installing on an iPhone", () => {
   test.use({ userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1" });
 

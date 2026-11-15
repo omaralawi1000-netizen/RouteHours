@@ -62,32 +62,50 @@ export function copenhagenNow(now = new Date(), zone = ZONE) {
   return { date: `${parts.year}-${parts.month}-${parts.day}`, minutes: Number(parts.hour) * 60 + Number(parts.minute), weekday };
 }
 
-/** A reminder is due from its time until 20 minutes after, once a day, so a late or repeated ping never doubles it. */
-export function due(device: Device, now = copenhagenNow()): Reminder[] {
-  return device.reminders.filter(r => {
-    // The working days are the shifts' days: a finish at 06:00 after a Friday night shift goes out on Saturday.
-    const shiftDay = (now.weekday - 1 - (r.day ?? 0) + 7) % 7 + 1;
-    if (!device.days.includes(shiftDay)) return false;
+/** A reminder that is due, with the date it belongs to: a 23:57 reminder sent at 00:00 is yesterday's. */
+export type DueReminder = Reminder & { date: string };
+
+/** The date before a yyyy-mm-dd date. */
+function dayBefore(date: string) {
+  const day = new Date(`${date}T12:00:00Z`);
+  day.setUTCDate(day.getUTCDate() - 1);
+  return day.toISOString().slice(0, 10);
+}
+
+/**
+ * A reminder is due from its time until 20 minutes after, also across midnight (a 23:57 reminder is
+ * still due at 00:00), once per date, so a late or repeated ping never doubles it.
+ */
+export function due(device: Device, now = copenhagenNow()): DueReminder[] {
+  return device.reminders.flatMap(r => {
     const [h, m] = r.time.split(":").map(Number);
     const at = h * 60 + m;
-    return now.minutes >= at && now.minutes < at + 20 && device.sent[r.id] !== now.date;
+    if ((now.minutes - at + 1440) % 1440 >= 20) return [];
+    // Past midnight, the reminder is yesterday's: its date and weekday are yesterday's.
+    const yesterday = now.minutes < at;
+    const date = yesterday ? dayBefore(now.date) : now.date;
+    const weekday = yesterday ? (now.weekday + 5) % 7 + 1 : now.weekday;
+    // The working days are the shifts' days: a finish at 06:00 after a Friday night shift goes out on Saturday.
+    const shiftDay = (weekday - 1 - (r.day ?? 0) + 7) % 7 + 1;
+    if (!device.days.includes(shiftDay) || device.sent[r.id] === date) return [];
+    return [{ ...r, date }];
   });
 }
 
 /**
  * Gives back reminders whose delivery failed, so the next tick retries them. Another writer (the phone
  * updating its subscription) may have saved the file since the claim, so on a conflict it re-reads the
- * latest file and clears only this tick's own claims (still dated today), keeping everything else.
+ * latest file and clears only this tick's own claims (id -> the date it claimed), keeping everything else.
  */
 export async function releaseClaims(
-  device: Device, etag: string, ids: string[], date: string,
+  device: Device, etag: string, claims: Record<string, string>,
   io: { read: () => Promise<{ device: Device; etag: string } | null>; write: (device: Device, etag: string) => Promise<string | null> },
   attempts = 3,
 ): Promise<boolean> {
   let current: { device: Device; etag: string } | null = { device, etag };
   for (let i = 0; i < attempts && current; i++) {
     const next = { ...current.device, sent: { ...current.device.sent } };
-    for (const id of ids) if (next.sent[id] === date) delete next.sent[id];
+    for (const [id, date] of Object.entries(claims)) if (next.sent[id] === date) delete next.sent[id];
     if (await io.write(next, current.etag)) return true;
     current = await io.read();
   }

@@ -5,7 +5,7 @@ import { AnimatePresence, m } from "motion/react";
 import { Check, ChevronDown, Download, FileSpreadsheet, Mail, Plus, RotateCcw, Send, Share2, TriangleAlert, X } from "lucide-react";
 import { buildWeeklyReport, columnLetter, displayDate, hhmm, reportLayout, type DayDetail, type DayDetails, type PayrollProfile, type WeeklyReport } from "@/lib/timesheet";
 import { allSubmissions, beginSubmission, downloadBlob, reportFingerprint, saveSubmission, type Submission } from "@/lib/storage";
-import { addDays, dateInZone, dayLedger, shiftWarnings, timeInZone, zonedInstant } from "@/lib/ledger";
+import { addDays, dateInZone, dayLedger, shiftWarnings, timeInZone, zonedInstant, type DayPiece } from "@/lib/ledger";
 import { gmailMessage, gmailToken, sendGmailMessage, validRecipient } from "@/lib/gmail";
 import { clearGoogleSession } from "@/lib/google-session";
 import { templateShift, type ShiftTemplate } from "@/lib/templates";
@@ -21,6 +21,7 @@ import { fade, spring, tf } from "../ui/motion";
 import { tick } from "../ui/haptics";
 import type { ToastMessage } from "../ui/toast";
 import { kr, toMinutes } from "./usual";
+import { withoutPiece } from "./pieces";
 import styles from "./send.module.css";
 
 const NOTES_KEY = "routehours:export-notes";
@@ -178,10 +179,12 @@ function Body({ onClose, week, zone, shifts, running, profile, onProfile, detail
       onShifts(list => list.map(s => s.id === shift.id ? { ...s, start, end, summary: undefined, summaryStatus: undefined, summaryError: undefined } : s));
     } catch (e) { say(e instanceof Error ? e.message : "Check that time"); }
   }
-  function removePiece(shift: Shift) {
+  // Only the day's own part goes: an overnight shift keeps its hours on the other day, which may be in a week already sent.
+  function removePiece(piece: DayPiece) {
     tick();
-    onShifts(list => list.filter(s => s.id !== shift.id));
-    say("Shift removed", { label: "Undo", onClick: () => onShifts(list => list.some(s => s.id === shift.id) ? list : [shift, ...list]) });
+    const { shift } = piece, kept = withoutPiece(piece), added = kept.filter(s => s.id !== shift.id).map(s => s.id);
+    onShifts(list => list.flatMap(s => s.id === shift.id ? kept : [s]));
+    say(kept.length ? `Removed the hours on ${displayDate(piece.date).slice(0, 5)}. The rest of that shift stays.` : "Shift removed", { label: "Undo", onClick: () => onShifts(list => [shift, ...list.filter(s => s.id !== shift.id && !added.includes(s.id))]) });
   }
   function addPiece(date: string, count: number) {
     tick();
@@ -274,7 +277,7 @@ function Body({ onClose, week, zone, shifts, running, profile, onProfile, detail
                     return <div key={piece.shift.id + piece.shift.start + piece.shift.end} className={styles.piece}>
                       <label><span>{pieces.length > 1 ? `Start ${i + 1}` : "Start"}</span><input type="time" defaultValue={timeInZone(piece.start, zone)} disabled={!whole} onChange={e => retime(piece.shift, date, "start", e.target.value)}/></label>
                       <label><span>{pieces.length > 1 ? `End ${i + 1}` : "End"}</span><input type="time" defaultValue={piece.endsAtMidnight ? "23:59" : timeInZone(piece.end, zone)} disabled={!whole} onChange={e => retime(piece.shift, date, "end", e.target.value)}/></label>
-                      <button type="button" className={styles.remove} aria-label={`Remove ${LONG[index]} shift ${i + 1}`} onClick={() => removePiece(piece.shift)}><X/></button>
+                      <button type="button" className={styles.remove} aria-label={`Remove ${LONG[index]} shift ${i + 1}`} onClick={() => removePiece(piece)}><X/></button>
                     </div>;
                   })}
                   {pieces.length < 3 && <button type="button" className={styles.addPiece} onClick={() => addPiece(date, pieces.length)}><Plus/> {pieces.length ? "Add second part (split shift)" : "Add times"}</button>}
