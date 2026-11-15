@@ -73,7 +73,7 @@ export default function Home() {
 
 function Shell() {
   const { data, loaded, bootError, storageError, update } = useAppData();
-  const { shifts, workZone: zone, templates, payroll, dayDetails, weeklyGoalHours, geminiApiKey, aiEnabled, accessCode, googleClientId } = data;
+  const { shifts, workZone: zone, templates, payroll, dayDetails, weeklyGoalHours, geminiApiKey, aiEnabled, accessCode, googleClientId, noteDraft } = data;
   const online = useOnlineStatus();
   const install = useInstall();
 
@@ -126,7 +126,7 @@ function Shell() {
   const parts = useMemo(() => partsFrom(templates), [templates]);
   const clientId = normalizeGoogleClientId(googleClientId) || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "";
   const google = useGoogleSession(clientId, "google");
-  const backups = useBackups({ clientId, online, today, onNotice: say });
+  const backups = useBackups({ clientId, online, today, onNotice: say, onRestored: merged => { setEditing(null); if (!merged) run.reset(); } });
   useShiftSummaries({ loaded, aiEnabled, geminiApiKey, accessCode, shifts, update, onNotice: say });
 
   // A Gemini key pasted in the lab carries over, so it doesn't have to be pasted again.
@@ -224,7 +224,10 @@ function Shell() {
 
   // Notes while driving: typed here, or spoken into the mic.
   const [notesOpen, setNotesOpen] = useState(false);
-  const [noteText, setNoteText] = useState("");
+  // During a shift the typed note is the saved draft, so a reload keeps it and Finish adds it. Otherwise it stays on screen.
+  const [loose, setLoose] = useState("");
+  const noteText = run.active ? noteDraft : loose;
+  const setNoteText = (value: string) => { if (run.active) update({ noteDraft: value }); else setLoose(value); };
   const liveNotes = run.active?.notes ?? [];
   function needKey() { say(NEED_KEY, { label: "Settings", onClick: () => changeTab("settings") }); }
   // The shift is picked when recording starts, so a note never lands on a shift started while it was written down.

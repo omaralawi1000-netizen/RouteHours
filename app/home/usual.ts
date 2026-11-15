@@ -13,7 +13,7 @@ export function zoneMinutes(at: number, zone: string) { return toMinutes(timeInZ
 
 /** The usual day, in order: the saved templates (Morning, Afternoon…) sorted by start time. */
 export function partsFrom(templates: ShiftTemplate[]): DayPart[] {
-  return templates.slice().sort((a, b) => a.start.localeCompare(b.start)).slice(0, 4)
+  return templates.slice().sort((a, b) => a.start.localeCompare(b.start))
     .map(t => ({ id: t.id, label: t.name, start: t.start, end: t.end, minutes: (toMinutes(t.end) - toMinutes(t.start) + 1440) % 1440 }));
 }
 export const dayMinutes = (parts: DayPart[]) => parts.reduce((sum, p) => sum + p.minutes, 0);

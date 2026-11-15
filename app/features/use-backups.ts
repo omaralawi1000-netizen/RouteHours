@@ -16,8 +16,8 @@ type Options = {
   online: boolean;
   today: string;
   onNotice: (message: string) => void;
-  /** Called after a restore is saved, so screens can clear anything that pointed at old records. */
-  onRestored?: () => void;
+  /** Called after a restore is saved, so screens can clear anything that pointed at old records. `merged` is false for a replace. */
+  onRestored?: (merged: boolean) => void;
 };
 
 /** Backup files, restore with preview, and the optional daily Google Drive backup. */
@@ -66,7 +66,7 @@ export function useBackups({ clientId, online, today, onNotice, onRestored }: Op
       const combined = merge ? [...current.shifts, ...backup.shifts.filter(s => !current.shifts.some(v => v.id === s.id || v.start === s.start && v.end === s.end))] : backup.shifts;
       const restored = { shifts: combined, active: merge ? current.active : backup.active || null, noteDraft: merge ? current.noteDraft : backup.noteDraft || "", payroll: merge ? current.payroll : backup.payroll || current.payroll, dayDetails: merge ? { ...backup.dayDetails, ...current.dayDetails } : backup.dayDetails || {}, workZone: merge ? current.workZone : backup.workZone || current.workZone, templates: merge ? current.templates : validateTemplates(backup.templates ?? current.templates) };
       await saveNow(restored, receipts);
-      onRestored?.(); setRestorePreview(null);
+      onRestored?.(merge); setRestorePreview(null);
       onNotice(merge ? "Backup merged. Existing shifts, templates and timer were kept." : "Backup restored. Email history was preserved and merged.");
     } catch (e) { onNotice((e as Error).message); }
   }

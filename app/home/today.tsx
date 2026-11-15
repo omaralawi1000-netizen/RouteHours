@@ -20,7 +20,9 @@ import styles from "./home.module.css";
 /** When a part usually ends, on the date the run began. */
 function usualEnd(startedAt: number, part: DayPart, zone: string) {
   const date = dateInZone(startedAt, zone);
-  try { return Date.parse(zonedInstant(`${part.end < part.start ? addDays(date, 1) : date}T${part.end}`, zone)); } catch { return 0; }
+  // An overnight part ends tomorrow, unless the run began after midnight (00:10 on a 22:00–06:00 part): then today.
+  const nextDay = part.end < part.start && zoneMinutes(startedAt, zone) > toMinutes(part.end);
+  try { return Date.parse(zonedInstant(`${nextDay ? addDays(date, 1) : date}T${part.end}`, zone)); } catch { return 0; }
 }
 
 export type RecentItem = { id: string; day: string; start: string; end: string; minutes: number; note?: string };

@@ -30,8 +30,8 @@ export function cleanSubscription(value: unknown): { endpoint: string; keys: { p
 
 export function cleanReminders(value: unknown): Reminder[] {
   if (!Array.isArray(value)) return [];
-  // Up to four usual parts, each with a leave, start and finish reminder.
-  return value.slice(0, 12).flatMap((r, i): Reminder[] => {
+  // Up to eight usual parts (the templates allow eight), each with a leave, start and finish reminder.
+  return value.slice(0, 24).flatMap((r, i): Reminder[] => {
     if (!r || typeof r !== "object") return [];
     const x = r as Record<string, unknown>;
     if (typeof x.time !== "string" || !/^([01]\d|2[0-3]):[0-5]\d$/.test(x.time)) return [];

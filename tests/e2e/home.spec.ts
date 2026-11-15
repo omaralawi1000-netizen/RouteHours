@@ -106,3 +106,19 @@ test("home: the name and payroll number fields stay open while you fill them in"
   await expect(sheet.getByRole("textbox", { name: "Løn-nr.", exact: true })).toHaveValue("12");
   await expect(sheet.getByRole("textbox", { name: "Your name", exact: true })).toHaveValue("Omar");
 });
+
+test("home: a typed note survives a reload and is saved with the shift", async ({ page }) => {
+  await openHome(page);
+  await page.getByRole("button", { name: "Start shift" }).click();
+  await page.getByRole("button", { name: "Add a note" }).click();
+  await page.getByRole("dialog").getByLabel("New note").fill("Bus 1123 had a flat");
+  await page.clock.fastForward(2_000);
+  await page.reload();
+  await page.getByRole("button", { name: "Add a note" }).click();
+  await expect(page.getByRole("dialog").getByLabel("New note")).toHaveValue("Bus 1123 had a flat");
+  await page.keyboard.press("Escape");
+  await page.clock.fastForward(20 * 60_000);
+  await page.getByRole("button", { name: "Finish shift" }).click();
+  await page.getByRole("button", { name: /Edit Today's shift/ }).click();
+  await expect(page.getByRole("dialog")).toContainText("Bus 1123 had a flat");
+});

@@ -59,8 +59,8 @@ test("a phone in another work time zone gets its reminders on its own clock", ()
 });
 
 test("four usual parts keep all twelve reminders", () => {
-  const list = Array.from({ length: 13 }, (_, i) => ({ id: `r${i}`, time: "06:40", title: "x", body: "y", action: "start" }));
-  assert.equal(cleanReminders(list).length, 12);
+  const list = Array.from({ length: 25 }, (_, i) => ({ id: `r${i}`, time: "06:40", title: "x", body: "y", action: "start" }));
+  assert.equal(cleanReminders(list).length, 24);
 });
 
 test("an overnight finish goes out on the shift's next day, by the shift's weekday", () => {

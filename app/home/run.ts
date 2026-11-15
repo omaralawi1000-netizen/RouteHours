@@ -190,12 +190,15 @@ export function useRun(say: Say) {
     return { ...shift, notes: [...shift.notes, note], summary: undefined, summaryError: undefined, summaryStatus: willSummarize ? "pending" : undefined };
   }
 
+  /** After records are replaced from a backup: forget a paused run that pointed at the old records. A restored timer lines up again on its own. */
+  function reset() { setRun(null); setLanding(null); }
+
   const phase: Phase = running ? "running" : landing ? "landing" : "idle";
   return {
     phase, running, onBreak, active, run, label: run?.label, stillDriving: Boolean(run?.stillDriving),
     startedAt: landing && !running ? landing.startedAt : startedAt, endedAt: landing?.endedAt ?? 0,
     breaks: landing && !running ? landing.breaks : breaks, pieces,
-    start, finish, toggleBreak, backdate, keepDriving, logUsualDay, addNote, noteTarget,
+    start, finish, toggleBreak, backdate, keepDriving, logUsualDay, addNote, noteTarget, reset,
   };
 }
 export type RunControls = ReturnType<typeof useRun>;
