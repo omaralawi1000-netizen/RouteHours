@@ -60,3 +60,12 @@ test("a short usual shift is still next at its reminder and its start", () => {
   assert.equal(nextPart(split, toMinutes("13:59"))?.id, "afternoon");
   assert.equal(nextPart(split, toMinutes("14:00")), null);
 });
+
+test("in the hour repeated when the clocks go back, the usual start is the one before the tap", () => {
+  const zone = "Europe/Copenhagen";
+  const night = partsFrom([{ id: "n", name: "Night", start: "02:30", end: "05:00" }])[0];
+  // 25 October 2026: 02:00–03:00 happens twice. Tapped at the first 02:50 (00:50 UTC): the usual start is the first 02:30.
+  assert.equal(new Date(usualStart(Date.parse("2026-10-25T00:50:00Z"), night, zone)!).toISOString(), "2026-10-25T00:30:00.000Z");
+  // Tapped at the second 02:50 (01:50 UTC): the second 02:30.
+  assert.equal(new Date(usualStart(Date.parse("2026-10-25T01:50:00Z"), night, zone)!).toISOString(), "2026-10-25T01:30:00.000Z");
+});

@@ -57,7 +57,11 @@ export function inPart(part: DayPart, now: number, before = 0) {
 export function usualStart(startedAt: number, part: DayPart, zone: string) {
   const date = dateInZone(startedAt, zone);
   const day = zoneMinutes(startedAt, zone) < toMinutes(part.start) ? addDays(date, -1) : date;
-  try { return Date.parse(zonedInstant(`${day}T${part.start}`, zone)); } catch { return null; }
+  let at: number;
+  try { at = Date.parse(zonedInstant(`${day}T${part.start}`, zone)); } catch { return null; }
+  // In the hour repeated when the clocks go back, 02:30 happens twice: take the one before the tap.
+  const earlier = at - 3600000;
+  return at > startedAt && timeInZone(earlier, zone) === part.start && dateInZone(earlier, zone) === day ? earlier : at;
 }
 
 /** When a part usually ends, on the date the run began. */
