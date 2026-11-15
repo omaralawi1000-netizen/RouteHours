@@ -1,5 +1,5 @@
-const CACHE = "routehours-shell-v13";
-const SHELL = ["/", "/manifest.webmanifest", "/icon-192-v3.png", "/icon-512-v3.png", "/icon-maskable-v3.png", "/apple-icon-v3.png"];
+const CACHE = "routehours-shell-v14";
+const SHELL = ["/", "/manifest.webmanifest", "/icon-192-v4.png", "/icon-512-v4.png", "/icon-maskable-v4.png", "/apple-icon-v4.png"];
 
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -53,7 +53,7 @@ self.addEventListener("push", event => {
     ? [{ action: "finish", title: "Finish shift" }, { action: "still", title: "Still driving" }]
     : data.action === "start" ? [{ action: "start", title: "Start shift" }, { action: "skip", title: "Not today" }] : [];
   event.waitUntil(self.registration.showNotification(data.title || "RouteHours", {
-    body: data.body || "", tag: data.tag || "routehours", renotify: true, icon: "/icon-192-v3.png", badge: "/icon-192-v3.png",
+    body: data.body || "", tag: data.tag || "routehours", renotify: true, icon: "/icon-192-v4.png", badge: "/badge-v4.png",
     actions, data: { action: data.action || "open" },
   }));
 });

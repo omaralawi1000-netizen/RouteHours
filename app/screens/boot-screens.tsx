@@ -27,5 +27,5 @@ export function RecoveryScreen({ message, onError }: { message: string; onError:
 }
 
 export function LoadingScreen() {
-  return <main className="loading-screen"><img src="/icon-192-v3.png" alt="" width="88" height="88"/><h1>RouteHours</h1><p>Your time, simply.</p><span className="loading-orb" aria-label="Loading your hours"/></main>;
+  return <main className="loading-screen"><img src="/icon-192-v4.png" alt="" width="88" height="88"/><h1>RouteHours</h1><p>Your time, simply.</p><span className="loading-orb" aria-label="Loading your hours"/></main>;
 }

@@ -28,8 +28,7 @@ Selection, caret, focus outlines, scrollbars, placeholder color and numeric data
 
 ## Icon provenance and launch
 
-- Native image-generation tool produced the opaque blue glass clock/route ribbon on pale blue/lavender for this project on 2026-10-02. It contains no text or Apple logo.
-- Original generated master is committed privately at `.design-assets/routehours-icon-master.png` (1254 square). It is the reference art, not a mock screenshot.
-- Browser Canvas resized/exported `public/icon-192-v3.png` (192), `public/icon-512-v3.png` (512), and `public/apple-icon-v3.png` (180). `public/icon-maskable-v3.png` (512) adds 7.5% padding on each edge over a matching light ground.
-- The manifest and metadata use versioned v3 assets. Android native splash uses the manifest's light background and icon; the initial in-app loading view uses the icon, name, short tagline and small spinner.
+- Since 15 Nov 2026 the icon is the Headlight scene, drawn by hand as SVG in `scripts/icons/`: a bus front on a night road with its headlights lit and a low amber sun behind it; the destination sign shows a route running to a clock.
+- `node scripts/make-icons.mjs` renders every size into `public/` with Playwright's Chromium: `icon-192-v4.png` and `icon-512-v4.png` (rounded, for browsers and desktop), `icon-maskable-v4.png` (full bleed; the bus sits inside the middle third so any launcher shape keeps it), `apple-icon-v4.png` (180, iOS rounds it), `icon-monochrome-v4.png` (Android's themed icon for Material You) and `badge-v4.png` (notification badge), plus `shortcut-start-v2.png` and `shortcut-finish-v2.png`.
+- Chrome support for themed (monochrome) icons on installed web apps was not confirmed by any official note on 15 Nov 2026; the icon is there for launchers that use it. An installed app may only show a new icon after it is removed and added to the home screen again.
 - Native mask, status bar and installed-icon refresh timing belong to the browser/OS. No actual phone appearance is implied by desktop screenshots.

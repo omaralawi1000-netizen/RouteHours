@@ -229,7 +229,7 @@ function Home() {
   return <div className="app-shell">
 
     <header className="topbar container">
-      <div className="brand"><img className="brand-mark" src="/icon-192-v3.png" alt="" width="37" height="37"/><div><strong>RouteHours</strong><span>Your time, simply.</span></div></div>
+      <div className="brand"><img className="brand-mark" src="/icon-192-v4.png" alt="" width="37" height="37"/><div><strong>RouteHours</strong><span>Your time, simply.</span></div></div>
       <div className="top-actions"><span className="today-pill"><CalendarDays size={15}/>{new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short" }).format(new Date())}</span>{!install.installed && <button className="install-top" onClick={() => void install.install()}><Download size={16}/> Install</button>}<button className="icon-btn theme-button" aria-label={isDarkTheme ? "Switch to light mode" : "Switch to dark mode"} title={isDarkTheme ? "Switch to light mode" : "Switch to dark mode"} onClick={() => update({ themeMode: isDarkTheme ? "light" : "dark" })}>{isDarkTheme ? <Sun size={19}/> : <Moon size={19}/>}</button><button className="icon-btn" aria-label="Settings" onClick={() => setSettingsOpen(true)}><Settings2 size={19}/></button></div>
     </header>
 
