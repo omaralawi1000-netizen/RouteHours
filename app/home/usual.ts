@@ -33,6 +33,12 @@ export function nextPart(parts: DayPart[], now: number): DayPart | null {
   return null;
 }
 
+/** Whether a clock time falls between `before` minutes ahead of a part's start and its usual end, also across midnight. */
+export function inPart(part: DayPart, now: number, before = 0) {
+  const from = toMinutes(part.start) - before, to = toMinutes(part.start) + part.minutes;
+  return [now - 1440, now, now + 1440].some(t => t >= from && t <= to);
+}
+
 /** Minutes after a run's usual end before an unfinished shift finishes itself. */
 export const AUTO_FINISH_AFTER = 60;
 /** EU driving rules: a 45-minute break is due after 4 h 30 min of driving. */

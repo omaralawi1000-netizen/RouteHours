@@ -13,7 +13,7 @@ import RouteLine from "../ui/route-line";
 import WeekBars, { type DayBar } from "../ui/week-bars";
 import { fade, spring } from "../ui/motion";
 import { item } from "../lab/stagger";
-import { AUTO_FINISH_AFTER, BREAK_AFTER, drivenSinceRest, hm, hms, kr, minutesToClock, nextPart, toMinutes, zoneMinutes, type DayPart } from "./usual";
+import { AUTO_FINISH_AFTER, BREAK_AFTER, drivenSinceRest, hm, inPart, hms, kr, minutesToClock, nextPart, toMinutes, zoneMinutes, type DayPart } from "./usual";
 import type { RunControls } from "./run";
 import styles from "./home.module.css";
 
@@ -47,6 +47,7 @@ export default function Today(props: {
   const currentBreak = breaks.find(b => !b.end);
   const dueIn = BREAK_AFTER - drivenSinceRest(startedAt, breaks, end);
   const part = parts.find(p => p.label === run.label);
+  const usualEndAt = part ? usualEnd(startedAt, part, zone) : 0;
   const usualMinutes = part?.minutes ?? 450;
   const expectedEnd = startedAt + usualMinutes * 60000 + breakMs;
   const clock = useNow(60_000);
@@ -65,7 +66,7 @@ export default function Today(props: {
   function press() {
     setBlooms(list => [...list, Date.now()]);
     if (phase === "landing") return;
-    if (running) run.finish(); else run.start(upcoming && clockNow >= toMinutes(upcoming.start) - 45 && clockNow <= toMinutes(upcoming.end) ? upcoming.label : undefined);
+    if (running) run.finish(); else run.start(upcoming && inPart(upcoming, clockNow, 45) ? upcoming.label : undefined);
   }
 
   const eyebrowText = onBreak ? "On break" : idle ? "This week" : phase === "landing" ? "Shift done" : "On shift";
@@ -111,17 +112,18 @@ export default function Today(props: {
   const weekday = new Date(clock).getDay() % 6 !== 0;
   const alerts: Alert[] = [];
   const startClock = zoneMinutes(startedAt, zone);
-  const startPart = part ?? parts.find(p => startClock >= toMinutes(p.start) && startClock < toMinutes(p.end));
-  const lateBy = startPart ? startClock - toMinutes(startPart.start) : 0;
+  const startPart = part ?? parts.find(p => inPart(p, startClock));
+  // Minutes after the usual start, counted across midnight (23:50 start, tapped 00:10: 20).
+  const lateBy = startPart ? ((startClock - toMinutes(startPart.start)) % 1440 + 1440) % 1440 : 0;
   if (running && !onBreak && startPart && !run.pieces.length && lateBy >= 10 && lateBy <= 180) {
     const at = Math.floor(startedAt / 60000) * 60000 - lateBy * 60000, label = startPart.start;
     alerts.push({ id: `start-${startedAt}`, text: `Started at ${label}? You tapped Start at ${clockTime(startedAt)}.`, icon: <Clock/>, action: { label: `Use ${label}`, onClick: () => run.backdate(at, label) } });
   }
   if (running && elapsed > 10 * 3600000) alerts.push({ id: `long-${startedAt}`, text: "This shift has run over 10 hours. Forgot to finish?", action: { label: "Finish", onClick: () => run.finish() } });
-  else if (running && !onBreak && part && !run.stillDriving && clockNow > toMinutes(part.end) + 30) alerts.push({ id: `late-${startedAt}`, text: `Past ${part.end}. Still driving? It stops by itself at ${minutesToClock(toMinutes(part.end) + AUTO_FINISH_AFTER)}.`, action: { label: "Finish", onClick: () => run.finish() }, alt: { label: "Still driving", onClick: run.keepDriving } });
+  else if (running && !onBreak && part && !run.stillDriving && usualEndAt && now > usualEndAt + 30 * 60000) alerts.push({ id: `late-${startedAt}`, text: `Past ${part.end}. Still driving? It stops by itself at ${minutesToClock(toMinutes(part.end) + AUTO_FINISH_AFTER)}.`, action: { label: "Finish", onClick: () => run.finish() }, alt: { label: "Still driving", onClick: run.keepDriving } });
   const leaveFrom = upcoming && props.travel ? toMinutes(upcoming.start) - props.travel : null;
   if (idle && weekday && !props.dayOff && upcoming && leaveFrom !== null && clockNow >= leaveFrom && clockNow < toMinutes(upcoming.start)) alerts.push({ id: `leave-${upcoming.id}`, text: `Time to leave. ${upcoming.label} shift at ${upcoming.start}.`, icon: <Footprints/> });
-  if (idle && weekday && !props.dayOff && todayMinutes === 0 && parts.length && clockNow >= toMinutes(parts.at(-1)!.end) + 45) alerts.push({ id: "empty", text: "Nothing logged today. Was it your usual day?", action: { label: "Log it", onClick: () => run.logUsualDay() } });
+  if (idle && weekday && !props.dayOff && todayMinutes === 0 && parts.length && clockNow >= toMinutes(parts.at(-1)!.start) + parts.at(-1)!.minutes + 45) alerts.push({ id: "empty", text: "Nothing logged today. Was it your usual day?", action: { label: "Log it", onClick: () => run.logUsualDay() } });
   if (idle && props.defaults) alerts.push({ id: "defaults", text: "Your usual shifts still have the starter times. Set yours?", icon: <Bus/>, action: { label: "Set them", onClick: props.onSettings } });
   const alert = alerts.find(a => !dismissed.includes(a.id)) ?? null;
 
@@ -129,7 +131,6 @@ export default function Today(props: {
   // ending at the usual time. "Still driving" (here or on the reminder) turns this off for the run.
   // The usual end is on the run's own date (the next day for a part that runs past midnight), so a
   // run left open overnight is never "finished" on the following day's clock.
-  const usualEndAt = part ? usualEnd(startedAt, part, zone) : 0;
   const activeStart = run.active ? Date.parse(run.active.start) : 0;
   const autoDue = running && !onBreak && !!part && !run.stillDriving && now >= usualEndAt + AUTO_FINISH_AFTER * 60000 && now < usualEndAt + 6 * 3600000 && usualEndAt > activeStart + 10 * 60000;
   const autoFired = useRef(0);

@@ -48,7 +48,8 @@ export default function SendSheet(props: Props) {
 const inFlight = new Set<string>();
 
 function Body({ onClose, week, zone, shifts, running, profile, onProfile, details, onDetails, templates, onShifts, clientId, online, rate, say, onSettings }: Props) {
-  const [includeNotes, setIncludeNotes] = useState(() => { try { return localStorage.getItem(NOTES_KEY) !== "false"; } catch { return true; } });
+  // Off until you switch it on, as in the classic export: notes and summaries only go to the employer by choice.
+  const [includeNotes, setIncludeNotes] = useState(() => { try { return localStorage.getItem(NOTES_KEY) === "true"; } catch { return false; } });
   const [records, setRecords] = useState<Submission[]>([]);
   const [historyReady, setHistoryReady] = useState(false);
   const [prepared, setPrepared] = useState<{ key: string; file: File } | null>(null);
