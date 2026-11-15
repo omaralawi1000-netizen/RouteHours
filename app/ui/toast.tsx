@@ -23,13 +23,13 @@ export default function Toast({ message, onDismiss, seconds = 5 }: { message: To
   function end(_: unknown, info: PanInfo) { if (Math.abs(info.offset.x) > 80 || Math.abs(info.velocity.x) > 500) onDismiss(); }
   return <div className={styles.stage} aria-live="polite">
     <AnimatePresence>
-      {message && <m.div key="toast" layout className={styles.toast} style={{ borderRadius: 26 }}
+      {message && <m.div key="toast" layout layoutDependency={message.id} className={styles.toast} style={{ borderRadius: 26 }}
         initial={{ y: 24, opacity: 0, scale: 0.96 }} animate={{ y: 0, opacity: 1, scale: 1, x: 0 }} exit={{ y: 16, opacity: 0, scale: 0.96, transition: spring.exit }} transition={spring.smooth}
         drag="x" dragSnapToOrigin dragElastic={0.5} onDragEnd={end}>
         <AnimatePresence mode="popLayout" initial={false}>
-          <m.span key={message.id} layout="position" className={styles.text} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6, transition: fade }} transition={spring.snappy}>{message.text}</m.span>
+          <m.span key={message.id} layout="position" layoutDependency={message.id} className={styles.text} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6, transition: fade }} transition={spring.snappy}>{message.text}</m.span>
         </AnimatePresence>
-        {message.action && <m.button layout="position" type="button" className={styles.action} onClick={() => { const action = message.action; onDismiss(); action?.onClick(); }}>{message.action.label}</m.button>}
+        {message.action && <m.button layout="position" layoutDependency={message.id} type="button" className={styles.action} onClick={() => { const action = message.action; onDismiss(); action?.onClick(); }}>{message.action.label}</m.button>}
       </m.div>}
     </AnimatePresence>
   </div>;

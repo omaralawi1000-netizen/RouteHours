@@ -141,3 +141,74 @@ test("home: unreadable data shows recovery right here, without leaving the scree
   expect((await download).suggestedFilename()).toBe("routehours-original-data.json");
   await expect(page.getByRole("button", { name: "Restore a backup file" })).toBeVisible();
 });
+
+// Omar, 15 Nov: "very very laggy", "keeps flickering". Each check below pins one cause that was found.
+test.describe("home: smooth on a phone", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.route(url => !["127.0.0.1", "localhost"].includes(url.hostname), route => route.abort());
+  });
+
+  test("nothing loops, at rest or on shift, so the blurred cards are drawn once and left alone", async ({ page }) => {
+    await page.goto("/");
+    const start = page.getByRole("button", { name: "Start shift" });
+    await expect(start).toBeVisible();
+    const loops = () => page.evaluate(() => ({
+      css: document.getAnimations().filter(a => a.playState === "running" && a.effect?.getComputedTiming().iterations === Infinity).map(a => (a as CSSAnimation).animationName),
+      svg: document.querySelectorAll("animate, animateMotion, animateTransform, set").length,
+    }));
+    expect(await loops()).toEqual({ css: [], svg: 0 });
+    await start.click();
+    await expect(page.getByRole("button", { name: "Finish shift" })).toBeVisible();
+    await page.waitForTimeout(1200);
+    expect(await loops()).toEqual({ css: [], svg: 0 });
+  });
+
+  test("a notice leaving on Start slides the cards up instead of making them jump", async ({ page }) => {
+    await page.goto("/");
+    // Fresh records still have the starter shifts, so the "Set them" notice sits above the cards.
+    await expect(page.getByText(/still have the starter times/)).toBeVisible();
+    await page.waitForTimeout(1200);
+    await page.evaluate(() => {
+      const button = document.querySelector("[class*=mainButton]")!;
+      const tops: number[] = [];
+      (window as unknown as { tops: number[] }).tops = tops;
+      const sample = () => { tops.push(button.getBoundingClientRect().top); if (tops.length < 70) requestAnimationFrame(sample); };
+      requestAnimationFrame(sample);
+    });
+    await page.getByRole("button", { name: "Start shift" }).click();
+    await page.waitForFunction(() => (window as unknown as { tops: number[] }).tops.length >= 70);
+    const tops = await page.evaluate(() => (window as unknown as { tops: number[] }).tops);
+    const moved = tops[0] - tops.at(-1)!;
+    expect(moved, "the notice left, so the button ends higher up").toBeGreaterThan(30);
+    const biggestStep = Math.max(...tops.slice(1).map((top, i) => Math.abs(top - tops[i])));
+    expect(biggestStep, "no single frame jumps most of the way").toBeLessThan(moved * 0.5);
+  });
+
+  test("opening shows this phone's wallpaper from the first frame, never another scene first", async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem("routehours:wallpaper", "ocean");
+      const seen: string[] = [];
+      (window as unknown as { seen: string[] }).seen = seen;
+      new MutationObserver(() => {
+        document.querySelectorAll<HTMLElement>("[class*=wallpaper-module][class*=plate]").forEach(plate => {
+          const sky = plate.style.getPropertyValue("--sky-top");
+          if (!seen.includes(sky)) seen.push(sky);
+        });
+      }).observe(document, { subtree: true, childList: true });
+    });
+    await page.goto("/");
+    await expect(page.getByRole("button", { name: "Start shift" })).toBeVisible();
+    // The page is coloured with the ocean sky before anything is drawn, then only ocean plates appear.
+    expect(await page.evaluate(() => document.documentElement.style.getPropertyValue("--page-bg"))).toBe("#A9BEE8");
+    expect(await page.evaluate(() => (window as unknown as { seen: string[] }).seen)).toEqual(["#A9BEE8", "#E9C3CF"]);
+  });
+
+  test("buttons floating on the wallpaper are frosted like the cards", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.getByRole("button", { name: "Start shift" })).toBeVisible();
+    for (const name of ["Settings", "Voice note", "Add a past shift", /Start your .* shift|Log your usual day/]) {
+      const button = page.getByRole("button", { name, exact: typeof name === "string" }).first();
+      expect(await button.evaluate(el => getComputedStyle(el).backdropFilter), String(name)).toContain("blur");
+    }
+  });
+});

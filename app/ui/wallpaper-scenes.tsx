@@ -53,7 +53,8 @@ export const SCENES: Scene[] = [
     running: { "--ember": "#FF9A3C", "--aura-2": "#C24A7A", "--horizon": "#4A2A5E" },
     art: <>
       <path className={styles.far} d="M0 170 h18 v-30 h14 v-22 h10 v22 h16 v-48 h22 v48 h12 v-20 h18 v34 h14 v-60 h8 v-14 h6 v14 h8 v60 h18 v-36 h20 v-18 h12 v18 h10 v46 h16 v-70 h24 v70 h14 v-30 h18 v-16 h14 v46 h18 v-42 h20 v42 h12 v-24 h16 v24 V320 H0Z"/>
-      <g className={styles.windows}>{WINDOWS.map(([x, y], i) => <rect key={i} x={x} y={y} width="2.4" height="3.2" style={{ animationDelay: `${(i * 0.73) % 7}s` }}/>)}</g>
+      {/* Lit windows, some brighter than others. They stay still: a twinkle would make every card above redo its blur. */}
+      <g className={styles.windows}>{WINDOWS.map(([x, y], i) => <rect key={i} x={x} y={y} width="2.4" height="3.2" opacity={[0.8, 0.3, 0.9, 0.55, 0.7][i % 5]}/>)}</g>
       <path className={styles.mid} d="M0 214 h30 v-22 h26 v12 h40 v-28 h22 v38 h34 v-18 h30 v26 h38 v-34 h28 v34 h40 v-14 h36 v20 h76 V320 H0Z"/>
       <path className={styles.near} d="M0 250 H400 V320 H0Z"/>
       <path className={styles.roadLine} d="M0 272 H400"/>
@@ -88,6 +89,11 @@ export const SCENES: Scene[] = [
   },
 ];
 
+
+/** Auto wallpaper: dawn sea in the morning, desert by day, dusk hills in the evening, the fjord at night. */
+export const SCENE_HOURS: [from: number, to: number, scene: SceneId][] = [[5, 10, "ocean"], [10, 16, "desert"], [16, 21, "dusk"]];
+export const NIGHT_SCENE: SceneId = "fjord";
+export function sceneForHour(hour: number): SceneId { return SCENE_HOURS.find(([from, to]) => hour >= from && hour < to)?.[2] ?? NIGHT_SCENE; }
 
 export function sceneStyle(scene: Scene, running: boolean): CSSProperties {
   return { ...scene.colors, ...(running ? scene.running : {}) } as CSSProperties;

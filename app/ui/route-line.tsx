@@ -9,8 +9,8 @@ import type { Break } from "./shift-line";
 const HOUR = 3600000;
 
 /**
- * Your shift drawn as a bus route. Every hour is a stop; the bus drives along the line and its
- * headlight lights the card around it. Stops you have passed glow, the ones ahead are hollow.
+ * Your shift drawn as a bus route. Every hour is a stop; the bus moves along the line once a
+ * minute and its headlight lights the card around it. Nothing on it loops. Stops you have passed glow, the ones ahead are hollow.
  * Breaks you took are coffee stops on the line, and the next required break sits ahead as a coffee
  * stop too, so you can see how far it is.
  */
@@ -19,24 +19,31 @@ export default function RouteLine({ startedAt, now, breaks, usualMinutes, breakD
   /** Finish was tapped: the bus pulls in to the last stop before the card turns back into the week. */
   arrived?: boolean;
 }) {
-  const span = Math.max(usualMinutes * 60000, now - startedAt + HOUR / 4);
+  // The bus moves once a minute (under a pixel a minute on a normal shift). Moving it every
+  // second meant a short animation every second, and each one redraws the blurred card around it.
+  const minute = Math.max(startedAt, Math.floor(now / 60000) * 60000);
+  const span = Math.max(usualMinutes * 60000, minute - startedAt + HOUR / 4);
   const at = (t: number) => Math.min(1, Math.max(0, (t - startedAt) / span));
-  const progress = arrived ? 1 : at(now);
+  const progress = arrived ? 1 : at(minute);
   const hours = Array.from({ length: Math.ceil(span / HOUR) - 1 }, (_, i) => (i + 1) * HOUR / span).filter(p => p < 0.97);
-  const pct = (p: number) => `${p * 100}%`;
+  // Rounded, so a value that only drifts by a rounding error never restyles the line.
+  const pct = (p: number) => `${Math.round(p * 10000) / 100}%`;
   return <div className={styles.wrap}>
     <div className={styles.line}>
-      <m.div className={styles.beam} initial={false} animate={{ left: pct(progress), opacity: paused ? 0 : 1 }} transition={spring.smooth} aria-hidden="true"/>
-      <m.div className={styles.light} initial={false} animate={{ left: pct(progress), opacity: paused ? 0.35 : 1 }} transition={spring.smooth} aria-hidden="true"/>
+      {/* The light and the bus ride on full-width layers that slide by transform, so moving them never repaints the line. */}
+      <m.div className={styles.travel} initial={false} animate={{ x: pct(progress) }} transition={spring.smooth} aria-hidden="true">
+        <m.div className={styles.light} initial={false} animate={{ opacity: paused ? 0.35 : 1 }} transition={spring.smooth}/>
+      </m.div>
       <div className={styles.ahead} style={{ left: pct(progress) }}/>
       <m.div className={styles.done} initial={false} animate={{ scaleX: progress }} transition={spring.smooth}/>
-      {breaks.map((b, i) => <div key={`g${i}`} className={styles.gap} style={{ left: pct(at(b.start)), width: pct(Math.max(0.012, at(b.end ?? now) - at(b.start))) }}/>)}
+      {breaks.map((b, i) => <div key={`g${i}`} className={styles.gap} style={{ left: pct(at(b.start)), width: pct(Math.max(0.012, at(b.end ?? minute) - at(b.start))) }}/>)}
       <span className={`${styles.stop} ${styles.end} ${styles.passed}`} style={{ left: "0%" }}/>
       {hours.map(p => <span key={p} className={`${styles.stop} ${p <= progress ? styles.passed : ""}`} style={{ left: pct(p) }}/>)}
       <span className={`${styles.stop} ${styles.end} ${arrived ? styles.passed : ""}`} style={{ left: "100%" }}/>
       {breaks.filter(b => b.end).map((b, i) => <span key={`b${i}`} className={`${styles.cafe} ${styles.cafeTaken}`} style={{ left: pct(at(b.start)) }} aria-hidden="true"><Coffee/></span>)}
-      {breakDueAt !== null && !paused && breakDueAt > now && <span className={`${styles.cafe} ${breakDueAt <= now ? styles.cafeDue : ""}`} style={{ left: pct(at(breakDueAt)) }} aria-hidden="true"><Coffee/></span>}
-      <m.div className={styles.busAt} initial={false} animate={{ left: pct(progress) }} transition={spring.smooth}>
+      {breakDueAt !== null && !paused && breakDueAt > now && <span className={styles.cafe} style={{ left: pct(at(breakDueAt)) }} aria-hidden="true"><Coffee/></span>}
+      <m.div className={`${styles.travel} ${styles.front}`} initial={false} animate={{ x: pct(progress) }} transition={spring.smooth}>
+        <m.div className={styles.beam} initial={false} animate={{ opacity: paused ? 0 : 1 }} transition={spring.smooth} aria-hidden="true"/>
         <span className={`${styles.bus} ${paused ? styles.parked : ""}`}>{paused ? <Coffee aria-hidden="true"/> : <Bus aria-hidden="true"/>}</span>
       </m.div>
     </div>

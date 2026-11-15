@@ -14,16 +14,18 @@ const DIGITS = "0123456789";
  */
 export default function RollingNumber({ value, className, label }: { value: string; className?: string; label?: string }) {
   const chars = [...value];
+  // Digits are all the same width, so the row only needs measuring when it gains or loses a character.
+  const grow = { layout: "position" as const, layoutDependency: chars.length, transition: spring.snappy };
   return <span className={`${styles.number} numeric ${className ?? ""}`} role="text" aria-label={label ?? value}>
     <AnimatePresence initial={false} mode="popLayout">
       {chars.map((char, index) => {
         const fromRight = chars.length - index;
         const digit = DIGITS.indexOf(char);
-        if (digit >= 0) return <m.span layout="position" transition={spring.snappy} key={`d${fromRight}`} className={styles.window} aria-hidden="true" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, transition: fade }}>
+        if (digit >= 0) return <m.span {...grow} key={`d${fromRight}`} className={styles.window} aria-hidden="true" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, transition: fade }}>
           <m.span className={styles.strip} initial={false} animate={{ y: `${-digit * 10}%` }} transition={spring.snappy}>{DIGITS.split("").map(d => <span key={d}>{d}</span>)}</m.span>
           <span className={styles.sizer}>0</span>
         </m.span>;
-        return <m.span layout="position" transition={spring.snappy} key={`c${fromRight}${char}`} className={/[a-z]/i.test(char) ? styles.unit : styles.mark} aria-hidden="true" initial={{ opacity: 0 }} animate={{ opacity: 1, transition: fade }} exit={{ opacity: 0, transition: fade }}>{char === " " ? " " : char}</m.span>;
+        return <m.span {...grow} key={`c${fromRight}${char}`} className={/[a-z]/i.test(char) ? styles.unit : styles.mark} aria-hidden="true" initial={{ opacity: 0 }} animate={{ opacity: 1, transition: fade }} exit={{ opacity: 0, transition: fade }}>{char === " " ? " " : char}</m.span>;
       })}
     </AnimatePresence>
   </span>;

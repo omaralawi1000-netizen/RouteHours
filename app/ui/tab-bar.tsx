@@ -16,7 +16,7 @@ export default function TabBar<T extends string>({ tabs, value, onChange }: { ta
     {tabs.map(tab => {
       const active = tab.id === value;
       return <m.button key={tab.id} type="button" className={`${styles.tab} ${active ? styles.active : ""}`} aria-label={tab.label} aria-current={active ? "page" : undefined} onClick={() => { if (!active) onChange(tab.id); }} whileTap={{ scale: 0.94 }} transition={spring.tap}>
-        {active && <m.span layoutId="dock-pill" className={styles.pill} transition={spring.settle}/>}
+        {active && <m.span layoutId="dock-pill" layoutDependency={value} className={styles.pill} transition={spring.settle}/>}
         <m.span className={styles.icon} aria-hidden="true" initial={false} animate={active ? { y: [0, -3, 0], scale: [1, 1.12, 1] } : { y: 0, scale: 1 }} transition={{ duration: 0.36, ease: [0.2, 0.8, 0.2, 1] }}>{tab.icon}</m.span>
         <span className={styles.label}>{tab.label}</span>
       </m.button>;

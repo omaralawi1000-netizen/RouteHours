@@ -15,10 +15,10 @@ const BARS = [0.55, 0.85, 1, 0.7, 0.9, 0.6, 0.8];
  */
 export default function MicPill({ state, level, seconds, onToggle, label = "Voice note" }: { state: MicState; level: number; seconds: number; onToggle: () => void; label?: string }) {
   const open = state !== "idle";
-  return <m.button type="button" layout className={`${styles.mic} ${open ? styles.open : ""} ${state === "listening" ? styles.live : ""}`} style={{ borderRadius: 999 }}
+  return <m.button type="button" layout layoutDependency={state} className={`${styles.mic} ${open ? styles.open : ""} ${state === "listening" ? styles.live : ""}`} style={{ borderRadius: 999 }}
     transition={spring.smooth} whileTap={{ scale: 0.97 }} onClick={onToggle} disabled={state === "writing"}
     aria-label={state === "listening" ? "Stop recording" : state === "writing" ? "Writing your note" : label} aria-pressed={state === "listening"}>
-    <m.span layout="position" className={styles.icon} transition={spring.smooth}>{state === "listening" ? <Square fill="currentColor"/> : <Mic/>}</m.span>
+    <m.span layout="position" layoutDependency={state} className={styles.icon} transition={spring.smooth}>{state === "listening" ? <Square fill="currentColor"/> : <Mic/>}</m.span>
     <AnimatePresence mode="popLayout" initial={false}>
       {state === "listening" && <m.span key="wave" className={styles.wave} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, transition: fade }} transition={spring.smooth} aria-hidden="true">
         {BARS.map((weight, index) => <m.span key={index} className={styles.bar} initial={false} animate={{ scaleY: 0.18 + Math.min(1, level * weight * (0.75 + 0.5 * ((index * 37 + seconds * 13) % 7) / 7)) * 0.82 }} transition={spring.tap}/>)}

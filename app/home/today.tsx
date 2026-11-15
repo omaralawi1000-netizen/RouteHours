@@ -79,7 +79,8 @@ export default function Today(props: {
   const timer = onBreak && currentBreak ? hms(end - currentBreak.start) : hms(elapsed);
   const bigNumber = <m.div key={pulse} className={styles.heroNumber} initial={pulse ? { scale: 1.06 } : false} animate={{ scale: 1 }} transition={spring.reward}>
     <RollingNumber value={idle ? hm(weekMinutes) : timer.slice(0, -3)} className={`${styles.big} ${!idle ? styles.bigTimer : ""} ${onBreak ? styles.paused : ""}`} label={idle ? `${hm(weekMinutes)} worked this week` : onBreak ? `On break for ${timer}` : `Shift time ${hms(elapsed)}`}/>
-    {!idle && <RollingNumber value={`:${timer.slice(-2)}`} className={`${styles.secs} ${onBreak ? styles.paused : ""}`} label=" "/>}
+    {/* The seconds just tick: a roll every second would keep the card above redrawing its blur all shift long. */}
+    {!idle && <span className={`${styles.secs} ${onBreak ? styles.paused : ""} numeric`} aria-hidden="true">:{timer.slice(-2)}</span>}
     <AnimatePresence initial={false}>{idle && goal > 0 && <m.span key="of" className={`${styles.of} numeric`} initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, transition: fade }} transition={spring.smooth}>/ {Math.round(goal / 6) / 10} h</m.span>}</AnimatePresence>
   </m.div>;
   const shiftsThisWeek = props.weekDays.filter(d => d.minutes > 0).length;
@@ -94,10 +95,10 @@ export default function Today(props: {
   const shiftLine = <RouteLine startedAt={startedAt} now={end} breaks={breaks} usualMinutes={usualMinutes} breakDueAt={breakDueAt !== null && breakDueAt < expectedEnd ? breakDueAt : null} paused={onBreak} startLabel={clockTime(startedAt)} endLabel={`~${clockTime(expectedEnd)}`} arrived={phase === "landing"}/>;
   const due = !onBreak && dueIn <= 0;
   const liveStats = <div className={styles.liveStats}>
-    <m.div layout className={`${styles.liveStat} ${due ? styles.liveHot : ""}`} transition={spring.snappy}>
+    <div className={`${styles.liveStat} ${due ? styles.liveHot : ""}`}>
       <span className={styles.liveLabel}><Coffee aria-hidden="true"/>{onBreak ? "On break" : due ? "Break due" : "Break in"}</span>
       {due ? <span className={styles.liveValue}>Now</span> : <RollingNumber className={styles.liveValue} value={onBreak && currentBreak ? hm((end - currentBreak.start) / 60000) : hm(Math.max(0, dueIn))}/>}
-    </m.div>
+    </div>
     <div className={styles.liveStat}>
       <span className={styles.liveLabel}><Flag aria-hidden="true"/>Done around</span>
       <RollingNumber className={styles.liveValue} value={clockTime(expectedEnd)}/>
@@ -144,7 +145,7 @@ export default function Today(props: {
   }, [autoDue, activeStart, usualEndAt]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const alertCard = <AnimatePresence initial={false} mode="popLayout">
-    {alert && <m.section key={alert.id} layout className={styles.alert} role="status" initial={{ opacity: 0, y: -10, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, scale: 0.96, transition: spring.exit }} transition={spring.settle}>
+    {alert && <m.section key={alert.id} className={styles.alert} role="status" initial={{ opacity: 0, y: -10, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, scale: 0.96, transition: spring.exit }} transition={spring.settle}>
       <span className={styles.alertIcon} aria-hidden="true">{alert.icon ?? <TriangleAlert/>}</span>
       <p className={styles.alertText}>{alert.text}</p>
       {alert.alt && <button type="button" className={styles.alertAlt} onClick={() => { setDismissed(list => [...list, alert.id]); alert.alt?.onClick(); }}>{alert.alt.label}</button>}
@@ -177,8 +178,8 @@ export default function Today(props: {
     <div className={`${styles.slotItem} ${styles.chips}`}>
       <AnimatePresence mode="popLayout" initial={false}>
         {running
-          ? <m.div key="break" {...pop}><Button variant="glass" size="small" icon={onBreak ? <Play/> : <Coffee/>} onClick={run.toggleBreak}>{onBreak ? "Resume" : "Break"}</Button></m.div>
-          : <m.div key="usual" {...pop}><Button variant="glass" size="small" icon={<Bus/>} onClick={() => upcoming ? run.start(upcoming) : run.logUsualDay()} aria-label={upcoming ? `Start your ${upcoming.label.toLowerCase()} shift` : "Log your usual day"}>{upcoming ? <>{upcoming.label} <span className="numeric">{upcoming.start}</span></> : "Usual day"}</Button></m.div>}
+          ? <Button key="break" {...pop} variant="glass" size="small" icon={onBreak ? <Play/> : <Coffee/>} onClick={run.toggleBreak}>{onBreak ? "Resume" : "Break"}</Button>
+          : <Button key="usual" {...pop} variant="glass" size="small" icon={<Bus/>} onClick={() => upcoming ? run.start(upcoming) : run.logUsualDay()} aria-label={upcoming ? `Start your ${upcoming.label.toLowerCase()} shift` : "Log your usual day"}>{upcoming ? <>{upcoming.label} <span className="numeric">{upcoming.start}</span></> : "Usual day"}</Button>}
       </AnimatePresence>
       <MicPill state={props.mic} level={props.level} seconds={props.micSeconds} onToggle={props.onMic}/>
       <AnimatePresence mode="popLayout" initial={false}>
@@ -189,19 +190,22 @@ export default function Today(props: {
     </div>
   </div>;
 
+  // When a notice appears or leaves above them, the cards slide to their new place (transform only,
+  // so their blur stays on) instead of jumping. They only measure themselves when the notice changes.
+  const slide = { layout: "position" as const, layoutDependency: alert?.id ?? "", transition: { layout: spring.smooth } };
   return <div className={styles.screen}>
     {header}
     {alertCard}
-    <m.section variants={item}><Glass blur className={`${styles.heroCard} ${running ? styles.heroLive : ""}`}>
+    <m.section variants={item} {...slide}><Glass blur className={`${styles.heroCard} ${running ? styles.heroLive : ""}`}>
       <div className={styles.heroHead}>{eyebrow}<span className={`${styles.heroMeta} numeric`}>{metaText}</span></div>
       {bigNumber}{under}{visual}
     </Glass></m.section>
-    <m.div variants={item} className={styles.actions}>{mainButton}{quickSlot}</m.div>
-    <m.section variants={item}><Glass blur className={styles.card}>
+    <m.div variants={item} {...slide} className={styles.actions}>{mainButton}{quickSlot}</m.div>
+    <m.section variants={item} {...slide}><Glass blur className={styles.card}>
       <div className={styles.cardHead}><h2 className={`${styles.cardTitle} serif`}>Recent shifts</h2><span className={styles.cardMeta}>{recent.length ? "Tap to edit" : ""}</span></div>
       {recent.length === 0 ? <p className={styles.hint}>Your shifts show up here. Tap Start when you pull out, or + to add one you forgot.</p> : <ul className={styles.list}>
         <AnimatePresence initial={false}>
-          {recent.map(shift => <m.li key={shift.id} layout initial={{ opacity: 0, height: 0, scale: 0.96 }} animate={{ opacity: 1, height: "auto", scale: 1 }} exit={{ opacity: 0, height: 0, transition: spring.exit }} transition={spring.settle}>
+          {recent.map(shift => <m.li key={shift.id} initial={{ opacity: 0, height: 0, scale: 0.96 }} animate={{ opacity: 1, height: "auto", scale: 1 }} exit={{ opacity: 0, height: 0, transition: spring.exit }} transition={spring.settle}>
             <m.button type="button" className={styles.shiftRow} onClick={() => props.onOpenShift(shift.id)} whileTap={{ scale: 0.98 }} transition={spring.tap} aria-label={`Edit ${shift.day}'s shift, ${shift.start} to ${shift.end}`}>
               <span className={styles.rowDay}>{shift.day}<small className="numeric">{shift.start} – {shift.end}{shift.note ? ` · ${shift.note}` : ""}</small></span>
               <span className={`${styles.rowValue} numeric`}>{hm(shift.minutes)}</span>

@@ -24,7 +24,7 @@ import type { WeekStatus } from "../ui/status-pill";
 import TabBar from "../ui/tab-bar";
 import Toast, { type ToastMessage } from "../ui/toast";
 import Wallpaper from "../ui/wallpaper";
-import { SCENES, type SceneId } from "../ui/wallpaper-scenes";
+import { SCENES, sceneForHour, type SceneId } from "../ui/wallpaper-scenes";
 import type { DayBar } from "../ui/week-bars";
 import type { WeekData } from "../ui/week-strip";
 import { setHaptics, tick } from "../ui/haptics";
@@ -53,8 +53,6 @@ const LEGACY_SCENE_KEY = "routehours:lab-wallpaper";
 const LAB_GEMINI_KEY = "routehours:lab-gemini";
 const isScene = (v: unknown): v is SceneId | "auto" => v === "auto" || SCENES.some(s => s.id === v);
 const isRate = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 2000;
-/** Auto wallpaper: dawn sea in the morning, desert by day, dusk hills in the evening, the fjord at night. */
-function sceneForHour(hour: number): SceneId { return hour >= 5 && hour < 10 ? "ocean" : hour >= 10 && hour < 16 ? "desert" : hour >= 16 && hour < 21 ? "dusk" : "fjord"; }
 
 const dayMonth = (date: string, month = true) => new Intl.DateTimeFormat("en-GB", { day: "numeric", ...(month ? { month: "short" } : {}), timeZone: "UTC" }).format(Date.parse(`${date}T12:00:00Z`));
 /** "9 – 15 Nov", or "27 Oct – 2 Nov" across a month. */
@@ -79,7 +77,7 @@ function Shell() {
   const install = useInstall();
 
   // The look: per-phone preferences, never part of the saved records.
-  const [choice, setChoice] = usePref<SceneId | "auto">(SCENE_KEY, "auto", isScene, LEGACY_SCENE_KEY);
+  const [choice, setChoice, choiceRead] = usePref<SceneId | "auto">(SCENE_KEY, "auto", isScene, LEGACY_SCENE_KEY);
   const [blur, setBlur] = usePref("routehours:blur", true, isBool);
   const [reduce, setReduce] = usePref("routehours:reduce-motion", false, isBool);
   const [haptics, setHapticsOn] = usePref("routehours:haptics", true, isBool);
@@ -88,6 +86,8 @@ function Shell() {
   const [hourNow, setHourNow] = useState(-1);
   useEffect(() => { const tickHour = () => setHourNow(new Date().getHours()); tickHour(); const timer = window.setInterval(tickHour, 60_000); return () => window.clearInterval(timer); }, []);
   const sceneId: SceneId = choice === "auto" ? (hourNow < 0 ? "dusk" : sceneForHour(hourNow)) : choice;
+  // Nothing is drawn until this phone's wallpaper is known, so the first frame is already the right scene.
+  const lookKnown = choiceRead && hourNow >= 0;
   const scene = SCENES.find(s => s.id === sceneId) ?? SCENES[0];
   const look = scene.tone;
   useEffect(() => { setHaptics(haptics); }, [haptics]);
@@ -95,6 +95,7 @@ function Shell() {
     const color = scene.colors["--sky-top"];
     document.querySelectorAll<HTMLMetaElement>("meta[name=theme-color]").forEach(meta => { meta.removeAttribute("media"); meta.content = color; });
     document.documentElement.style.background = color;
+    document.documentElement.style.setProperty("--page-bg", color);
   }, [scene]);
   function changeScene(next: SceneId | "auto") {
     tick();
@@ -298,11 +299,11 @@ function Shell() {
   }
 
   const running = run.running;
-  const ready = mounted && loaded;
+  const ready = mounted && loaded && lookKnown;
   return <LazyMotion features={domMax}>
     <MotionConfig reducedMotion={reduce ? "always" : "user"}>
-      <div className={`look ${styles.lab}`} data-look={look} data-state={running ? "running" : "idle"} data-blur={blur ? "on" : "off"} data-motion={reduce ? "reduced" : "full"}>
-        <Wallpaper scene={sceneId} state={running && !run.onBreak ? "running" : "idle"}/>
+      <div className={`look ${styles.lab}`} data-look={look} data-ready={lookKnown ? undefined : "no"} data-state={running ? "running" : "idle"} data-blur={blur ? "on" : "off"} data-motion={reduce ? "reduced" : "full"}>
+        {lookKnown && <Wallpaper scene={sceneId} state={running && !run.onBreak ? "running" : "idle"}/>}
         {bootError ? <main className={styles.page}>
           <Glass blur className={styles.card}>
             <h1 className={`${styles.cardTitle} serif`}>Your data needs attention</h1>
@@ -332,7 +333,7 @@ function Shell() {
           </div>
 
           <AnimatePresence>{ready && !online && <m.p key="offline" className={styles.offline} role="status" initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}><WifiOff aria-hidden="true"/> Offline · still saving on this phone</m.p>}</AnimatePresence>
-          <TabBar value={tab} onChange={changeTab} tabs={[{ id: "today", label: "Today", icon: <Sun/> }, { id: "week", label: "Week", icon: <CalendarDays/> }, { id: "settings", label: "Settings", icon: <Settings2/> }]}/>
+          {ready && <TabBar value={tab} onChange={changeTab} tabs={[{ id: "today", label: "Today", icon: <Sun/> }, { id: "week", label: "Week", icon: <CalendarDays/> }, { id: "settings", label: "Settings", icon: <Settings2/> }]}/>}
 
           <ShiftSheet shift={editing?.shift ?? null} isNew={!!editing?.isNew} shifts={shifts} zone={zone} onClose={() => setEditing(null)} onSave={saveShift} onDelete={deleteShift}/>
           <SendSheet open={reviewing} onClose={() => setReviewing(false)} week={selected.monday} zone={zone} shifts={shifts} running={running}
