@@ -154,8 +154,12 @@ export function useRun(say: Say) {
     try { made = partsFrom(templates).map(part => templateShift(templates.find(t => t.id === part.id)!, date, workZone)); }
     catch (error) { say(error instanceof Error ? error.message : "Check your usual shift times in Settings"); return; }
     if (!made.length) { say("Add your usual shifts in Settings first"); return; }
+    // Only the usual parts that aren't logged yet: a morning already saved is never added twice.
+    const overlaps = (a: Shift, b: Shift) => Date.parse(a.start) < Date.parse(b.end) && Date.parse(b.start) < Date.parse(a.end);
+    made = made.filter(part => !latest.current.shifts.some(shift => overlaps(part, shift)));
+    if (!made.length) { say("Your usual shifts are already logged for today"); return; }
     const ids = new Set(made.map(s => s.id));
-    update(current => ({ shifts: [...made, ...current.shifts] }));
+    update(current => ({ shifts: [...made.filter(part => !current.shifts.some(shift => overlaps(part, shift))), ...current.shifts] }));
     const minutes = made.reduce((sum, s) => sum + Math.round((Date.parse(s.end) - Date.parse(s.start)) / 60000), 0);
     say(`Usual day logged · ${hm(minutes)}`, { label: "Undo", onClick: () => { update(current => ({ shifts: current.shifts.filter(s => !ids.has(s.id)) })); say("Removed"); } });
   }

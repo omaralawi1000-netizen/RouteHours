@@ -212,3 +212,37 @@ test.describe("home: smooth on a phone", () => {
     }
   });
 });
+
+test("home: the usual day only adds the parts that aren't logged yet", async ({ page }) => {
+  // 16:00 in Copenhagen: both starter parts (07:00–09:00, 13:00–15:00) are over, so the chip offers the usual day.
+  await page.route(url => !["127.0.0.1", "localhost"].includes(url.hostname), route => route.abort());
+  await page.clock.install({ time: new Date("2026-11-11T15:00:00Z") });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Add a past shift" }).click();
+  const sheet = page.getByRole("dialog");
+  await sheet.getByLabel("Day").fill("2026-11-11");
+  await sheet.getByLabel("Started").fill("07:00");
+  await sheet.getByLabel(/Finished/).fill("09:00");
+  await sheet.getByRole("button", { name: "Save" }).click();
+  await toast(page, "Shift added · 2:00");
+  await page.getByRole("button", { name: "Log your usual day" }).click();
+  await toast(page, "Usual day logged · 2:00");
+  await page.getByRole("button", { name: "Log your usual day" }).click();
+  await toast(page, "Your usual shifts are already logged for today");
+  await page.getByRole("button", { name: "Week", exact: true }).click();
+  await expect(page.getByText(/overlap|same times/)).toHaveCount(0);
+});
+
+test("home: Review & send keeps its week when Sunday turns into Monday while it is open", async ({ page }) => {
+  // 23:59 on Sunday 15 November in Copenhagen, reviewing the week of 9–15 November.
+  await page.route(url => !["127.0.0.1", "localhost"].includes(url.hostname), route => route.abort());
+  await page.clock.install({ time: new Date("2026-11-15T22:59:00Z") });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Week", exact: true }).click();
+  await page.getByRole("button", { name: "Review & send" }).click();
+  const sheet = page.getByRole("dialog", { name: "Review & send" });
+  await expect(sheet.getByText("09.11.2026 – 15.11.2026", { exact: false })).toBeVisible();
+  await page.clock.runFor(2 * 60_000);
+  await expect(sheet.getByText("09.11.2026 – 15.11.2026", { exact: false })).toBeVisible();
+  await expect(sheet.getByText("16.11.2026", { exact: false })).toHaveCount(0);
+});

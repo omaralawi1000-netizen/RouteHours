@@ -241,7 +241,11 @@ function Shell() {
     onError: message => message === NEED_KEY ? needKey() : say(message),
   });
 
-  const [reviewing, setReviewing] = useState(false);
+  // The week being reviewed is fixed when the sheet opens, so a prepared email still sends that
+  // week even if the calendar rolls over to a new week (Sunday midnight) while the sheet is open.
+  const [reviewWeek, setReviewWeek] = useState<string | null>(null);
+  const reviewing = reviewWeek !== null;
+  const setReviewing = (open: boolean) => setReviewWeek(open ? selected.monday : null);
   // A sheet covers the bottom of the screen, so an older message would sit on top of its fields.
   const sheetOpen = reviewing || !!editing || notesOpen || !!backups.restorePreview;
   useEffect(() => { if (sheetOpen) setToast(null); }, [sheetOpen]);
@@ -336,7 +340,7 @@ function Shell() {
           {ready && <TabBar value={tab} onChange={changeTab} tabs={[{ id: "today", label: "Today", icon: <Sun/> }, { id: "week", label: "Week", icon: <CalendarDays/> }, { id: "settings", label: "Settings", icon: <Settings2/> }]}/>}
 
           <ShiftSheet shift={editing?.shift ?? null} isNew={!!editing?.isNew} shifts={shifts} zone={zone} onClose={() => setEditing(null)} onSave={saveShift} onDelete={deleteShift}/>
-          <SendSheet open={reviewing} onClose={() => setReviewing(false)} week={selected.monday} zone={zone} shifts={shifts} running={running}
+          <SendSheet open={reviewing} onClose={() => setReviewing(false)} week={reviewWeek ?? selected.monday} zone={zone} shifts={shifts} running={running}
             profile={payroll} onProfile={value => update({ payroll: value })} details={dayDetails} onDetails={value => update({ dayDetails: value })}
             templates={templates} onShifts={change => update(current => ({ shifts: change(current.shifts) }))} clientId={clientId} online={online} rate={rate} say={say}
             onSettings={() => { setReviewing(false); changeTab("settings"); }}/>

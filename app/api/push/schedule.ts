@@ -38,7 +38,9 @@ export function cleanReminders(value: unknown): Reminder[] {
     const action: ReminderAction = x.action === "finish" || x.action === "leave" ? x.action : "start";
     const text = (s: unknown, max: number) => typeof s === "string" ? s.trim().slice(0, max) : "";
     const day = x.day === 1 || x.day === -1 ? { day: x.day as 1 | -1 } : {};
-    return [{ id: text(x.id, 40) || `r${i}`, time: x.time, title: text(x.title, 60) || "RouteHours", body: text(x.body, 140), action, ...day }];
+    // Template ids may be up to 80 characters, and the app adds "-start", "-end" or "-leave", so the
+    // limit leaves room for the suffix: cutting it off would give a part's reminders the same id.
+    return [{ id: text(x.id, 100) || `r${i}`, time: x.time, title: text(x.title, 60) || "RouteHours", body: text(x.body, 140), action, ...day }];
   });
 }
 

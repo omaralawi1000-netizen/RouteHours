@@ -75,3 +75,10 @@ test("an overnight finish goes out on the shift's next day, by the shift's weekd
   assert.deepEqual(due(early, at("2026-11-13", 23 * 60 + 55, 5)), []);
   assert.deepEqual(cleanReminders([{ time: "06:00", day: 1 }, { time: "06:00", day: 3 }]).map(r => r.day), [1, undefined]);
 });
+
+test("a long template id keeps each reminder's suffix, so its reminders stay apart", () => {
+  const id = "a".repeat(80);
+  const ids = cleanReminders(["start", "end", "leave"].map(kind => ({ id: `${id}-${kind}`, time: "06:40" }))).map(r => r.id);
+  assert.equal(new Set(ids).size, 3);
+  assert.ok(ids.every(r => r.startsWith(id)));
+});
