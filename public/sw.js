@@ -1,4 +1,4 @@
-const CACHE = "routehours-shell-v14";
+const CACHE = "routehours-shell-v15";
 const SHELL = ["/", "/manifest.webmanifest", "/icon-192-v4.png", "/icon-512-v4.png", "/icon-maskable-v4.png", "/apple-icon-v4.png"];
 
 self.addEventListener("install", event => {
@@ -36,8 +36,19 @@ self.addEventListener("fetch", event => {
     }).catch(async () => await caches.match("/") || Response.error()));
     return;
   }
+  // The manifest names the app's icons, so always ask the network first: a cached copy would keep an old icon.
+  if (url.pathname === "/manifest.webmanifest") {
+    event.respondWith(fetch(request).then(response => {
+      if (response.ok) {
+        const copy = response.clone();
+        event.waitUntil(caches.open(CACHE).then(cache => cache.put(request, copy)));
+      }
+      return response;
+    }).catch(async () => await caches.match(request) || Response.error()));
+    return;
+  }
   event.respondWith(caches.match(request).then(hit => hit || fetch(request).then(response => {
-    if (response.ok && (url.pathname.startsWith("/_next/static/") || url.pathname.startsWith("/icon-") || url.pathname === "/manifest.webmanifest")) {
+    if (response.ok && (url.pathname.startsWith("/_next/static/") || url.pathname.startsWith("/icon-"))) {
       const copy = response.clone();
       event.waitUntil(caches.open(CACHE).then(cache => cache.put(request, copy)));
     }

@@ -199,9 +199,31 @@ test.describe("home: smooth on a phone", () => {
     });
     await page.goto("/");
     await expect(page.getByRole("button", { name: "Start shift" })).toBeVisible();
-    // The page is coloured with the ocean sky before anything is drawn, then only ocean plates appear.
-    expect(await page.evaluate(() => document.documentElement.style.getPropertyValue("--page-bg"))).toBe("#A9BEE8");
+    // The page is coloured with the ocean's top edge before anything is drawn, then only ocean plates appear.
+    expect(await page.evaluate(() => document.documentElement.style.getPropertyValue("--page-bg"))).toBe("#BAB9EE");
     expect(await page.evaluate(() => (window as unknown as { seen: string[] }).seen)).toEqual(["#A9BEE8", "#E9C3CF"]);
+  });
+
+  test("the phone's status bar takes the colour of the wallpaper's top edge, idle and on shift", async ({ page }) => {
+    await page.addInitScript(() => localStorage.setItem("routehours:wallpaper", "ocean"));
+    await page.goto("/");
+    const themeColor = () => page.evaluate(() => [...document.querySelectorAll<HTMLMetaElement>("meta[name=theme-color]")].map(meta => meta.content));
+    const topEdge = () => page.evaluate(() => {
+      const plate = document.querySelector<HTMLElement>("[class*=wallpaper-module][class*=plate]:not([data-warm])");
+      return plate && getComputedStyle(plate, "::after").backgroundImage;
+    });
+    await expect(page.getByRole("button", { name: "Start shift" })).toBeVisible();
+    expect(new Set(await themeColor())).toEqual(new Set(["#BAB9EE"]));
+    expect(await topEdge()).toContain("rgb(186, 185, 238)");
+    await page.getByRole("button", { name: "Start shift" }).click();
+    await expect.poll(themeColor).toEqual(expect.arrayContaining(["#D3BAE4"]));
+    expect(new Set(await themeColor())).toEqual(new Set(["#D3BAE4"]));
+  });
+
+  test("the app is set in Plus Jakarta Sans, not the browser's default font", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.getByRole("button", { name: "Start shift" })).toBeVisible();
+    expect(await page.evaluate(() => getComputedStyle(document.querySelector(".look")!).fontFamily)).toContain("Plus Jakarta Sans");
   });
 
   test("buttons floating on the wallpaper are frosted like the cards", async ({ page }) => {

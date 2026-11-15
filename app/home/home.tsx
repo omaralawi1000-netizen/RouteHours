@@ -24,7 +24,7 @@ import type { WeekStatus } from "../ui/status-pill";
 import TabBar from "../ui/tab-bar";
 import Toast, { type ToastMessage } from "../ui/toast";
 import Wallpaper from "../ui/wallpaper";
-import { SCENES, sceneForHour, type SceneId } from "../ui/wallpaper-scenes";
+import { SCENES, sceneForHour, statusColor, type SceneId } from "../ui/wallpaper-scenes";
 import type { DayBar } from "../ui/week-bars";
 import type { WeekData } from "../ui/week-strip";
 import { setHaptics, tick } from "../ui/haptics";
@@ -101,12 +101,6 @@ function Shell() {
   const scene = SCENES.find(s => s.id === sceneId) ?? SCENES[0];
   const look = scene.tone;
   useEffect(() => { setHaptics(haptics); }, [haptics]);
-  useEffect(() => {
-    const color = scene.colors["--sky-top"];
-    document.querySelectorAll<HTMLMetaElement>("meta[name=theme-color]").forEach(meta => { meta.removeAttribute("media"); meta.content = color; });
-    document.documentElement.style.background = color;
-    document.documentElement.style.setProperty("--page-bg", color);
-  }, [scene]);
   function changeScene(next: SceneId | "auto") {
     tick();
     const nextTone = SCENES.find(s => s.id === (next === "auto" ? sceneForHour(new Date().getHours()) : next))?.tone;
@@ -314,11 +308,19 @@ function Shell() {
   }
 
   const running = run.running;
+  const warm = running && !run.onBreak;
+  // The phone's status bar takes the colour of the wallpaper's top edge, for every theme and state.
+  useEffect(() => {
+    const color = statusColor(scene, warm);
+    document.querySelectorAll<HTMLMetaElement>("meta[name=theme-color]").forEach(meta => { meta.removeAttribute("media"); meta.content = color; });
+    document.documentElement.style.background = color;
+    document.documentElement.style.setProperty("--page-bg", color);
+  }, [scene, warm]);
   const ready = mounted && loaded && lookKnown;
   return <LazyMotion features={domMax}>
     <MotionConfig reducedMotion={reduce ? "always" : "user"}>
       <div className={`look ${styles.lab}`} data-look={look} data-ready={lookKnown ? undefined : "no"} data-state={running ? "running" : "idle"} data-blur={blur ? "on" : "off"} data-motion={reduce ? "reduced" : "full"}>
-        {lookKnown && <Wallpaper scene={sceneId} state={running && !run.onBreak ? "running" : "idle"}/>}
+        {lookKnown && <Wallpaper scene={sceneId} state={warm ? "running" : "idle"}/>}
         {bootError ? <main className={styles.page}>
           <Glass blur className={styles.card}>
             <h1 className={`${styles.cardTitle} serif`}>Your data needs attention</h1>
