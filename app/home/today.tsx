@@ -48,7 +48,8 @@ export default function Today(props: {
   const elapsed = end - startedAt - breakMs;
   const currentBreak = breaks.find(b => !b.end);
   const dueIn = BREAK_AFTER - drivenSinceRest(startedAt, breaks, end);
-  const part = parts.find(p => p.label === run.label);
+  // By id; a run saved before ids were kept falls back to the name.
+  const part = parts.find(p => run.partId ? p.id === run.partId : p.label === run.label);
   const usualEndAt = part ? usualEnd(startedAt, part, zone) : 0;
   const usualMinutes = part?.minutes ?? 450;
   const expectedEnd = startedAt + usualMinutes * 60000 + breakMs;
@@ -68,7 +69,7 @@ export default function Today(props: {
   function press() {
     setBlooms(list => [...list, Date.now()]);
     if (phase === "landing") return;
-    if (running) run.finish(); else run.start(upcoming && inPart(upcoming, clockNow, 45) ? upcoming.label : undefined);
+    if (running) run.finish(); else run.start(upcoming && inPart(upcoming, clockNow, 45) ? upcoming : undefined);
   }
 
   const eyebrowText = onBreak ? "On break" : idle ? "This week" : phase === "landing" ? "Shift done" : "On shift";
@@ -177,7 +178,7 @@ export default function Today(props: {
       <AnimatePresence mode="popLayout" initial={false}>
         {running
           ? <m.div key="break" {...pop}><Button variant="glass" size="small" icon={onBreak ? <Play/> : <Coffee/>} onClick={run.toggleBreak}>{onBreak ? "Resume" : "Break"}</Button></m.div>
-          : <m.div key="usual" {...pop}><Button variant="glass" size="small" icon={<Bus/>} onClick={() => upcoming ? run.start(upcoming.label) : run.logUsualDay()} aria-label={upcoming ? `Start your ${upcoming.label.toLowerCase()} shift` : "Log your usual day"}>{upcoming ? <>{upcoming.label} <span className="numeric">{upcoming.start}</span></> : "Usual day"}</Button></m.div>}
+          : <m.div key="usual" {...pop}><Button variant="glass" size="small" icon={<Bus/>} onClick={() => upcoming ? run.start(upcoming) : run.logUsualDay()} aria-label={upcoming ? `Start your ${upcoming.label.toLowerCase()} shift` : "Log your usual day"}>{upcoming ? <>{upcoming.label} <span className="numeric">{upcoming.start}</span></> : "Usual day"}</Button></m.div>}
       </AnimatePresence>
       <MicPill state={props.mic} level={props.level} seconds={props.micSeconds} onToggle={props.onMic}/>
       <AnimatePresence mode="popLayout" initial={false}>

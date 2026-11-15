@@ -19,7 +19,7 @@ import { hm, partsFrom } from "./usual";
  */
 /** The shift a note belongs to: the running part (by its start) or a saved shift. */
 export type NoteTarget = { activeStart?: string; shiftId?: string };
-export type Run = { startedAt: string; label?: string; pieces: string[]; breakSince?: string; stillDriving?: boolean };
+export type Run = { startedAt: string; label?: string; /** The usual shift this run is, by template id (names can repeat). */ partId?: string; pieces: string[]; breakSince?: string; stillDriving?: boolean };
 export type Phase = "idle" | "running" | "landing";
 const RUN_KEY = "routehours:run";
 /** A break longer than this ends the run: the driver went home. */
@@ -82,12 +82,12 @@ export function useRun(say: Say) {
     return { id: crypto.randomUUID(), start: current.start, end: new Date(endAt).toISOString(), notes, summaryStatus: willSummarize && notes.length ? "pending" : undefined };
   }
 
-  function start(label?: string) {
+  function start(part?: { id: string; label: string }) {
     if (latest.current.active || isBlocked()) return;
     tick();
     const now = new Date().toISOString();
     update({ active: { start: now, notes: [] }, noteDraft: "" });
-    setRun({ startedAt: now, label, pieces: [] });
+    setRun({ startedAt: now, label: part?.label, partId: part?.id, pieces: [] });
     setLanding(null);
   }
 
@@ -195,7 +195,7 @@ export function useRun(say: Say) {
 
   const phase: Phase = running ? "running" : landing ? "landing" : "idle";
   return {
-    phase, running, onBreak, active, run, label: run?.label, stillDriving: Boolean(run?.stillDriving),
+    phase, running, onBreak, active, run, label: run?.label, partId: run?.partId, stillDriving: Boolean(run?.stillDriving),
     startedAt: landing && !running ? landing.startedAt : startedAt, endedAt: landing?.endedAt ?? 0,
     breaks: landing && !running ? landing.breaks : breaks, pieces,
     start, finish, toggleBreak, backdate, keepDriving, logUsualDay, addNote, noteTarget, reset,

@@ -249,7 +249,7 @@ function Shell() {
     if (action === "start") {
       if (run.running) { say("Already on shift"); return; }
       const part = nextPart(parts, zoneMinutes(Date.now(), zone));
-      run.start(part?.label); say(part ? `${part.label} shift started. Usually done at ${part.end}.` : "Shift started");
+      run.start(part ?? undefined); say(part ? `${part.label} shift started. Usually done at ${part.end}.` : "Shift started");
     } else if (action === "finish") { if (run.running) run.finish(); else say("No shift is running"); }
     else if (action === "still") { if (run.running) run.keepDriving(); else say("No shift is running"); }
   }; });
