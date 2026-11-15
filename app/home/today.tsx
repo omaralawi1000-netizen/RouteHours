@@ -14,7 +14,7 @@ import WeekBars, { type DayBar } from "../ui/week-bars";
 import { fade, spring, tf } from "../ui/motion";
 import { useSlide } from "../ui/use-slide";
 import { item } from "../lab/stagger";
-import { AUTO_FINISH_AFTER, BREAK_AFTER, drivenSinceRest, hm, inPart, hms, kr, minutesToClock, nextPart, toMinutes, usualEnd, zoneMinutes, type DayPart } from "./usual";
+import { AUTO_FINISH_AFTER, BREAK_AFTER, drivenSinceRest, hm, inPart, hms, kr, minutesToClock, nextPart, toMinutes, usualEnd, usualStart, zoneMinutes, type DayPart } from "./usual";
 import type { RunControls } from "./run";
 import styles from "./home.module.css";
 
@@ -111,10 +111,11 @@ export default function Today(props: {
   const alerts: Alert[] = [];
   const startClock = zoneMinutes(startedAt, zone);
   const startPart = part ?? parts.find(p => inPart(p, startClock));
-  // Minutes after the usual start, counted across midnight (23:50 start, tapped 00:10: 20).
-  const lateBy = startPart ? ((startClock - toMinutes(startPart.start)) % 1440 + 1440) % 1440 : 0;
-  if (running && !onBreak && startPart && !run.pieces.length && lateBy >= 10 && lateBy <= 180) {
-    const at = Math.floor(startedAt / 60000) * 60000 - lateBy * 60000, label = startPart.start;
+  // Real minutes after the usual start, also across midnight (23:50 start, tapped 00:10: 20) and a clock change.
+  const usualAt = startPart ? usualStart(startedAt, startPart, zone) : null;
+  const lateBy = usualAt === null ? 0 : (startedAt - usualAt) / 60000;
+  if (running && !onBreak && startPart && usualAt !== null && !run.pieces.length && lateBy >= 10 && lateBy <= 180) {
+    const at = usualAt, label = startPart.start;
     alerts.push({ id: `start-${startedAt}`, text: `Started at ${label}? You tapped Start at ${clockTime(startedAt)}.`, icon: <Clock/>, action: { label: `Use ${label}`, onClick: () => run.backdate(at, label) } });
   }
   if (running && elapsed > 10 * 3600000) alerts.push({ id: `long-${startedAt}`, text: "This shift has run over 10 hours. Forgot to finish?", action: { label: "Finish", onClick: () => run.finish() } });

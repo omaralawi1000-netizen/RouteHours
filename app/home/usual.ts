@@ -21,18 +21,21 @@ export const dayMinutes = (parts: DayPart[]) => parts.reduce((sum, p) => sum + p
 
 /**
  * The part that comes next, for the quick-start chip. A part stays "next" until halfway to the
- * following one (Morning until about 10:15), and the last one until 45 minutes before it ends.
- * Late in the evening, tomorrow's first part counts once it is 45 minutes away.
+ * following one (Morning until about 10:15), and the last one until 45 minutes before it ends
+ * (halfway through, if it is shorter than 90 minutes). Late in the evening, tomorrow's first part
+ * counts once it is 45 minutes away.
  */
 export function nextPart(parts: DayPart[], now: number): DayPart | null {
+  // The last part is next until 45 minutes before its end, or halfway through a short one (07:00–07:30
+  // until 07:15), so it is never over before it starts. Start plus length, so 22:00–06:00 ends at 30:00.
+  const lastCutoff = (p: DayPart) => toMinutes(p.start) + Math.max(p.minutes - 45, p.minutes / 2);
   // After midnight, last night's overnight part (22:00–06:00) comes before any daytime part.
-  const overnight = parts.find(p => now + 1440 < toMinutes(p.start) + p.minutes - 45);
+  const overnight = parts.find(p => now + 1440 < lastCutoff(p));
   if (overnight) return overnight;
   for (let i = 0; i < parts.length; i++) {
     const part = parts[i], following = parts[i + 1];
-    // Start plus length, so an overnight part (22:00–06:00) ends at 30:00, not 06:00.
     const end = toMinutes(part.start) + part.minutes;
-    const cutoff = following ? (end + toMinutes(following.start)) / 2 : end - 45;
+    const cutoff = following ? (end + toMinutes(following.start)) / 2 : lastCutoff(part);
     if (now < cutoff) return part;
   }
   // A part just after midnight (00:02) is next from 45 minutes before it, as its Start reminder
@@ -44,6 +47,17 @@ export function nextPart(parts: DayPart[], now: number): DayPart | null {
 export function inPart(part: DayPart, now: number, before = 0) {
   const from = toMinutes(part.start) - before, to = toMinutes(part.start) + part.minutes;
   return [now - 1440, now, now + 1440].some(t => t >= from && t <= to);
+}
+
+/**
+ * When a run that began at `startedAt` usually starts, as a real moment: the part's start that day, or
+ * the evening before for a run tapped after midnight (23:50 part, tapped 00:10). Worked out on the work
+ * clock, so a clock change in between doesn't add an hour. Null if the clocks skipped that time.
+ */
+export function usualStart(startedAt: number, part: DayPart, zone: string) {
+  const date = dateInZone(startedAt, zone);
+  const day = zoneMinutes(startedAt, zone) < toMinutes(part.start) ? addDays(date, -1) : date;
+  try { return Date.parse(zonedInstant(`${day}T${part.start}`, zone)); } catch { return null; }
 }
 
 /** When a part usually ends, on the date the run began. */

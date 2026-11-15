@@ -293,6 +293,37 @@ test("home: removing one day of an overnight shift in Review & send keeps the ot
   await expect(wednesday).toContainText("22:00");
 });
 
+test("home: reminders that were turned off elsewhere stop syncing instead of retrying forever", async ({ page }) => {
+  // A phone with reminders on, whose subscription then disappears (another tab turned them off).
+  await page.addInitScript(() => {
+    const w = window as unknown as { subCalls: number; dropSubscription: () => void };
+    let subscribed = true;
+    w.subCalls = 0;
+    w.dropSubscription = () => { subscribed = false; };
+    const sub = { endpoint: "https://fcm.googleapis.com/fcm/send/x", toJSON() { return { endpoint: this.endpoint, keys: { p256dh: "p", auth: "a" } }; }, unsubscribe: async () => true };
+    const registration = { pushManager: { getSubscription: async () => { w.subCalls++; return subscribed ? sub : null; }, subscribe: async () => sub } };
+    Object.defineProperty(ServiceWorkerContainer.prototype, "register", { value: async () => registration });
+    Object.defineProperty(ServiceWorkerContainer.prototype, "getRegistration", { value: async () => registration });
+    Object.defineProperty(ServiceWorkerContainer.prototype, "ready", { get: () => Promise.resolve(registration) });
+    localStorage.setItem("routehours:lab-reminders", "on");
+  });
+  await page.route("**/api/push/key", route => route.fulfill({ json: { publicKey: "BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBUYIHBQFLXYp5Nksh8U", push: true, store: true } }));
+  await page.route("**/api/push/subscribe", route => route.fulfill({ json: { ok: true } }));
+  await openHome(page);
+  await page.getByRole("button", { name: "Settings", exact: true }).last().click();
+  await expect(page.getByText("On, Monday to Friday")).toBeVisible();
+  await page.evaluate(() => (window as unknown as { dropSubscription: () => void }).dropSubscription());
+  const before = await page.evaluate(() => (window as unknown as { subCalls: number }).subCalls);
+  const fifteen = page.getByRole("radiogroup", { name: "Time to get there" }).getByRole("radio", { name: "15" });
+  await fifteen.scrollIntoViewIfNeeded();
+  await fifteen.click();
+  await toast(page, "Reminders are off on this phone. Turn them on to get them again.");
+  await expect(page.getByRole("switch", { name: "Shift reminders" })).not.toBeChecked();
+  await page.waitForTimeout(1000);
+  const after = await page.evaluate(() => (window as unknown as { subCalls: number }).subCalls);
+  expect(after - before).toBeLessThan(5);
+});
+
 test.describe("home: installing on an iPhone", () => {
   test.use({ userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1" });
 
