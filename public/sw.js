@@ -1,4 +1,4 @@
-const CACHE = "routehours-shell-v12";
+const CACHE = "routehours-shell-v13";
 const SHELL = ["/", "/manifest.webmanifest", "/icon-192-v3.png", "/icon-512-v3.png", "/icon-maskable-v3.png", "/apple-icon-v3.png"];
 
 self.addEventListener("install", event => {
@@ -27,7 +27,7 @@ self.addEventListener("fetch", event => {
   if (request.method !== "GET" || url.origin !== self.location.origin || url.pathname.startsWith("/api/")) return;
   if (request.mode === "navigate") {
     event.respondWith(fetch(request).then(response => {
-      // Only the app itself is the offline shell. Other pages (like /lab) must never replace it.
+      // Only the app itself is the offline shell. Other pages (/classic, /lab) must never replace it.
       if (response.ok && url.pathname === "/") {
         const copy = response.clone();
         event.waitUntil(caches.open(CACHE).then(cache => cache.put("/", copy)));
@@ -62,9 +62,9 @@ self.addEventListener("notificationclick", event => {
   event.notification.close();
   const chosen = event.action || "open";
   if (chosen === "skip") return;
-  const target = new URL(`/lab?do=${encodeURIComponent(chosen === "open" ? "open" : chosen)}`, self.location.origin).href;
+  const target = new URL(`/?do=${encodeURIComponent(chosen === "open" ? "open" : chosen)}`, self.location.origin).href;
   event.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(list => {
-    const open = list.find(client => new URL(client.url).pathname.startsWith("/lab"));
+    const open = list.find(client => new URL(client.url).pathname === "/");
     if (open) { open.postMessage({ type: "REMINDER_ACTION", action: chosen }); return open.focus(); }
     return self.clients.openWindow(target);
   }));

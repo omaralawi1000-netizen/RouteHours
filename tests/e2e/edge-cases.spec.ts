@@ -33,7 +33,7 @@ test("a second tab that saves stops the first tab from overwriting", async ({ pa
   await waitForSave(page);
   const second = await context.newPage();
   await second.route(url => !["127.0.0.1", "localhost"].includes(url.hostname), route => route.abort());
-  await second.goto("/");
+  await second.goto("/classic");
   await addPastShift(second, "2026-11-10T07:00", "2026-11-10T08:00");
   await expect(second.locator(".timer-foot")).toHaveText("Saved on this device");
   await page.bringToFront();

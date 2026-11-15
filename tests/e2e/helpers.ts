@@ -1,5 +1,6 @@
 import { expect, type Page } from "@playwright/test";
 
+// The classic screens (kept at /classic) are what these helpers drive.
 // Wednesday 11 November 2026, 08:00 in Copenhagen.
 export const FIXED_NOW = new Date("2026-11-11T07:00:00.000Z");
 
@@ -8,7 +9,7 @@ export async function openApp(page: Page, options: { now?: Date; paused?: boolea
   await page.route(url => !["127.0.0.1", "localhost"].includes(url.hostname), route => route.abort());
   await page.clock.install({ time: options.now ?? FIXED_NOW });
   if (options.paused) await page.clock.pauseAt(options.now ?? FIXED_NOW);
-  await page.goto("/");
+  await page.goto("/classic");
   await expect(page.getByRole("button", { name: /Start shift|Finish shift/ })).toBeVisible();
   await expect(page.getByText("Saved on this device").or(page.getByText("Loading your records…"))).toBeVisible();
 }

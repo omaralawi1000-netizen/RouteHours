@@ -29,7 +29,7 @@ export default function Toast({ message, onDismiss, seconds = 5 }: { message: To
         <AnimatePresence mode="popLayout" initial={false}>
           <m.span key={message.id} layout="position" className={styles.text} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6, transition: fade }} transition={spring.snappy}>{message.text}</m.span>
         </AnimatePresence>
-        {message.action && <m.button layout="position" type="button" className={styles.action} onClick={() => { message.action?.onClick(); onDismiss(); }}>{message.action.label}</m.button>}
+        {message.action && <m.button layout="position" type="button" className={styles.action} onClick={() => { const action = message.action; onDismiss(); action?.onClick(); }}>{message.action.label}</m.button>}
       </m.div>}
     </AnimatePresence>
   </div>;
